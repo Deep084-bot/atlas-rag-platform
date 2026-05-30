@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
 
-type Health = {
-  service: string;
-  status: string;
-  timestamp: string;
-};
-
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
 
 function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [health, setHealth] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -25,7 +19,7 @@ function App() {
           throw new Error(`Request failed with status ${response.status}`);
         }
 
-        const data = (await response.json()) as Health;
+        const data = await response.json();
         setHealth(data);
       } catch (error_) {
         if (error_ instanceof DOMException && error_.name === 'AbortError') {

@@ -25,7 +25,8 @@ This repository now contains the initial implementation scaffold:
 - `npm run dev:web` starts the frontend only
 - `npm run dev:api` starts the API only
 - `npm run build` builds both layers
-- `npm run typecheck` checks TypeScript across web and server
+
+The codebase is now JavaScript-first, so there is no TypeScript check step in this scaffold.
 
 ## Environment
 
