@@ -7,3 +7,5 @@ server/dist
 *.log
 coverage
 .DS_Store
+uploads/
+.env
