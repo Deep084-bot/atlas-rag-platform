@@ -9,6 +9,10 @@ import { DocumentsRepository } from './documents/repository.js';
 import { createDocumentsRouter } from './documents/routes.js';
 import { ChunkRepository } from './ingestion/chunkRepository.js';
 import { createChunkService } from './ingestion/chunkService.js';
+import { EmbeddingRepository } from './embeddings/embeddingRepository.js';
+import { createEmbeddingService } from './embeddings/embeddingService.js';
+import { HuggingFaceProvider } from './embeddings/HuggingFaceProvider.js';
+import { LocalTransformersProvider } from './embeddings/LocalTransformersProvider.js';
 import { LocalStorageProvider } from './storage/local.js';
 import { verifyDatabaseConnection } from './db.js';
 
@@ -16,9 +20,24 @@ dotenv.config();
 
 const app = express();
 const storageProvider = new LocalStorageProvider();
-const documentsRepository = new DocumentsRepository(getPool());
-const chunkRepository = new ChunkRepository(getPool());
+const pool = getPool();
+const documentsRepository = new DocumentsRepository(pool);
+const chunkRepository = new ChunkRepository(pool);
+const embeddingRepository = new EmbeddingRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
+const embeddingProviderName = (process.env.EMBEDDING_PROVIDER ?? 'huggingface').toLowerCase();
+const embeddingProvider =
+  embeddingProviderName === 'local' || embeddingProviderName === 'local-transformers'
+    ? new LocalTransformersProvider()
+    : new HuggingFaceProvider({
+        apiKey: process.env.HF_API_KEY,
+        model: 'BAAI/bge-small-en-v1.5'
+      });
+const embeddingService = createEmbeddingService({
+  documentsRepository,
+  embeddingRepository,
+  embeddingProvider
+});
 
 app.use(helmet());
 app.use(
@@ -30,7 +49,10 @@ app.use(
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.use('/api/documents', createDocumentsRouter({ storageProvider, documentsRepository, chunkService }));
+app.use(
+  '/api/documents',
+  createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService })
+);
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({

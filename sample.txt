@@ -1,0 +1,1 @@
+Atlas is a personal knowledge platform built with Node.js, Express.js, Neon PostgreSQL and pgvector.

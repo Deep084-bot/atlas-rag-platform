@@ -15,7 +15,7 @@ function buildUploadMiddleware() {
   }).single('file');
 }
 
-export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService }) {
+export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService }) {
   const router = Router();
   const upload = buildUploadMiddleware();
 
@@ -199,6 +199,46 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
       const message = error instanceof Error ? error.message : 'Unable to read chunks.';
       return response.status(500).json({
         error: 'document_chunks_read_failed',
+        message
+      });
+    }
+  });
+
+  router.post('/:id/embed', async (request, response) => {
+    try {
+      const result = await embeddingService.embedDocument(request.params.id);
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      return response.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to embed document.';
+      return response.status(500).json({
+        error: 'document_embed_failed',
+        message
+      });
+    }
+  });
+
+  router.get('/:id/embeddings/status', async (request, response) => {
+    try {
+      const result = await embeddingService.getEmbeddingStatus(request.params.id);
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      return response.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read embedding status.';
+      return response.status(500).json({
+        error: 'document_embedding_status_failed',
         message
       });
     }
