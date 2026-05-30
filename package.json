@@ -1,0 +1,46 @@
+{
+  "name": "atlas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "vite --config web/vite.config.ts",
+    "dev:api": "tsx watch server/index.ts",
+    "build": "npm run build:web && npm run build:api",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:api": "tsc -p server/tsconfig.json",
+    "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "lint": "echo \"Linting will be added after the first slice lands.\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "groq-sdk": "^0.22.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.13.0",
+    "pgvector": "^0.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "serverless-http": "^3.2.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.13.4",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11"
+  }
+}
