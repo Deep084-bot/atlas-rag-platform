@@ -14,6 +14,11 @@ import { createEmbeddingService } from './embeddings/embeddingService.js';
 import { HuggingFaceProvider } from './embeddings/HuggingFaceProvider.js';
 import { LocalTransformersProvider } from './embeddings/LocalTransformersProvider.js';
 import { LocalStorageProvider } from './storage/local.js';
+import { SearchRepository } from './search/searchRepository.js';
+import { createSearchRouter } from './search/routes.js';
+import { createSearchService } from './search/searchService.js';
+import { createRetrievalRouter } from './retrieval/routes.js';
+import { createRetrievalService } from './retrieval/retrievalService.js';
 import { verifyDatabaseConnection } from './db.js';
 
 dotenv.config();
@@ -24,6 +29,7 @@ const pool = getPool();
 const documentsRepository = new DocumentsRepository(pool);
 const chunkRepository = new ChunkRepository(pool);
 const embeddingRepository = new EmbeddingRepository(pool);
+const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
 const embeddingProviderName = (process.env.EMBEDDING_PROVIDER ?? 'huggingface').toLowerCase();
 const embeddingProvider =
@@ -37,6 +43,13 @@ const embeddingService = createEmbeddingService({
   documentsRepository,
   embeddingRepository,
   embeddingProvider
+});
+const searchService = createSearchService({
+  embeddingProvider,
+  searchRepository
+});
+const retrievalService = createRetrievalService({
+  searchService
 });
 
 app.use(helmet());
@@ -53,6 +66,8 @@ app.use(
   '/api/documents',
   createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService })
 );
+app.use('/api/search', createSearchRouter({ searchService }));
+app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({
