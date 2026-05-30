@@ -15,7 +15,7 @@ function buildUploadMiddleware() {
   }).single('file');
 }
 
-export function createDocumentsRouter({ storageProvider, documentsRepository }) {
+export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService }) {
   const router = Router();
   const upload = buildUploadMiddleware();
 
@@ -159,6 +159,46 @@ export function createDocumentsRouter({ storageProvider, documentsRepository }) 
       const message = error instanceof Error ? error.message : 'Unable to delete document.';
       return response.status(500).json({
         error: 'document_delete_failed',
+        message
+      });
+    }
+  });
+
+  router.post('/:id/chunk', async (request, response) => {
+    try {
+      const result = await chunkService.chunkDocument(request.params.id);
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      return response.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to chunk document.';
+      return response.status(500).json({
+        error: 'document_chunk_failed',
+        message
+      });
+    }
+  });
+
+  router.get('/:id/chunks', async (request, response) => {
+    try {
+      const result = await chunkService.listDocumentChunks(request.params.id);
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      return response.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read chunks.';
+      return response.status(500).json({
+        error: 'document_chunks_read_failed',
         message
       });
     }

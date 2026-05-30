@@ -7,6 +7,8 @@ import morgan from 'morgan';
 import { getPool } from "./db.js";
 import { DocumentsRepository } from './documents/repository.js';
 import { createDocumentsRouter } from './documents/routes.js';
+import { ChunkRepository } from './ingestion/chunkRepository.js';
+import { createChunkService } from './ingestion/chunkService.js';
 import { LocalStorageProvider } from './storage/local.js';
 import { verifyDatabaseConnection } from './db.js';
 
@@ -15,6 +17,8 @@ dotenv.config();
 const app = express();
 const storageProvider = new LocalStorageProvider();
 const documentsRepository = new DocumentsRepository(getPool());
+const chunkRepository = new ChunkRepository(getPool());
+const chunkService = createChunkService({ documentsRepository, chunkRepository });
 
 app.use(helmet());
 app.use(
@@ -26,7 +30,7 @@ app.use(
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.use('/api/documents', createDocumentsRouter({ storageProvider, documentsRepository }));
+app.use('/api/documents', createDocumentsRouter({ storageProvider, documentsRepository, chunkService }));
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({
