@@ -1,4 +1,6 @@
 import { EmbeddingProvider } from './EmbeddingProvider.js';
+import { ProviderError } from '../errors.js';
+import { fetchWithRetry } from '../http/fetchWithRetry.js';
 
 const DEFAULT_MODEL = 'BAAI/bge-small-en-v1.5';
 const DEFAULT_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
@@ -55,7 +57,10 @@ function normalizeEmbeddingOutput(output) {
         return normalizeVector(output.map((value) => Number(value)));
     }
 
-    throw new Error('Unexpected embedding response format from Hugging Face.');
+    throw new ProviderError('Unexpected embedding response format from Hugging Face.', {
+        provider: 'Hugging Face',
+        statusCode: 502
+    });
 }
 
 export class HuggingFaceProvider extends EmbeddingProvider {
@@ -83,37 +88,35 @@ export class HuggingFaceProvider extends EmbeddingProvider {
         const modelPath = this.model.split('/').map((segment) => encodeURIComponent(segment)).join('/');
         const url = `${this.baseUrl}/${modelPath}/pipeline/feature-extraction`;
 
-        console.log("HF URL:", url);
+        const response = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.apiKey ?? ''}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                inputs: texts.length === 1 ? texts[0] : texts,
+                options: {
+                    wait_for_model: true
+                }
+            })
+        }, {
+            providerName: 'Hugging Face',
+            timeoutMs: 15000,
+            retries: 2
+        });
 
-        let response;
+        let payload;
 
         try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${this.apiKey ?? ''}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    inputs: texts.length === 1 ? texts[0] : texts,
-                    options: {
-                        wait_for_model: true
-                    }
-                })
+            payload = await response.json();
+        } catch (error) {
+            throw new ProviderError('Hugging Face returned an invalid JSON response.', {
+                provider: 'Hugging Face',
+                statusCode: 502,
+                cause: error
             });
-
-            console.log("HF Status:", response.status);
-        } catch (err) {
-            console.error("HF FETCH ERROR:", err);
-            throw err;
         }
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Hugging Face embedding request failed with status ${response.status}: ${errorText}`);
-        }
-
-        const payload = await response.json();
         const normalized = normalizeEmbeddingOutput(payload);
 
         if (texts.length === 1 && Array.isArray(normalized) && normalized.length > 0 && typeof normalized[0] === 'number') {

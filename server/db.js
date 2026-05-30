@@ -1,5 +1,7 @@
 import { Pool } from "pg";
 
+import { DatabaseError } from './errors.js';
+
 let pool = null;
 
 export function getPool() {
@@ -32,7 +34,7 @@ export async function verifyDatabaseConnection() {
   const pool = getPool();
 
   if (!pool) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new DatabaseError("DATABASE_URL is not configured.");
   }
 
   try {

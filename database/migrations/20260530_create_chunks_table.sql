@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   chunk_index integer NOT NULL,
   content text NOT NULL,
   character_count integer NOT NULL,
-  created_at timestamp NOT NULL DEFAULT NOW()
+  created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
 CREATE EXTENSION IF NOT EXISTS vector;

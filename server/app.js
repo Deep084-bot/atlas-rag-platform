@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import { getPool } from "./db.js";
 import { DocumentsRepository } from './documents/repository.js';
 import { createDocumentsRouter } from './documents/routes.js';
+import { createDocumentOrchestrator } from './documents/documentOrchestrator.js';
 import { ChunkRepository } from './ingestion/chunkRepository.js';
 import { createChunkService } from './ingestion/chunkService.js';
 import { EmbeddingRepository } from './embeddings/embeddingRepository.js';
@@ -14,6 +15,14 @@ import { createEmbeddingService } from './embeddings/embeddingService.js';
 import { HuggingFaceProvider } from './embeddings/HuggingFaceProvider.js';
 import { LocalTransformersProvider } from './embeddings/LocalTransformersProvider.js';
 import { LocalStorageProvider } from './storage/local.js';
+import { ConversationRepository } from './chat/conversationRepository.js';
+import { createChatRouter } from './chat/routes.js';
+import { createChatService } from './chat/chatService.js';
+import { createGenerationRouter } from './generation/routes.js';
+import { createGenerationConfig } from './generation/config.js';
+import { GroqProvider } from './generation/GroqProvider.js';
+import { buildGenerationPrompt } from './generation/promptBuilder.js';
+import { createGenerationService } from './generation/generationService.js';
 import { SearchRepository } from './search/searchRepository.js';
 import { createSearchRouter } from './search/routes.js';
 import { createSearchService } from './search/searchService.js';
@@ -24,13 +33,16 @@ import { verifyDatabaseConnection } from './db.js';
 dotenv.config();
 
 const app = express();
+const generationConfig = createGenerationConfig();
 const storageProvider = new LocalStorageProvider();
 const pool = getPool();
 const documentsRepository = new DocumentsRepository(pool);
 const chunkRepository = new ChunkRepository(pool);
 const embeddingRepository = new EmbeddingRepository(pool);
+const conversationRepository = new ConversationRepository(pool);
 const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
+const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService });
 const embeddingProviderName = (process.env.EMBEDDING_PROVIDER ?? 'huggingface').toLowerCase();
 const embeddingProvider =
   embeddingProviderName === 'local' || embeddingProviderName === 'local-transformers'
@@ -44,12 +56,36 @@ const embeddingService = createEmbeddingService({
   embeddingRepository,
   embeddingProvider
 });
+documentOrchestrator.setEmbeddingService(embeddingService);
 const searchService = createSearchService({
   embeddingProvider,
   searchRepository
 });
 const retrievalService = createRetrievalService({
   searchService
+});
+const generationProvider = new GroqProvider({
+  apiKey: generationConfig.groqApiKey,
+  model: generationConfig.groqModel,
+  baseUrl: generationConfig.groqBaseUrl
+});
+const generationService = createGenerationService({
+  retrievalService,
+  generationProvider,
+  buildPrompt: buildGenerationPrompt,
+  defaultTopK: generationConfig.retrievalTopK,
+  maxTopK: 12,
+  defaultSimilarityThreshold: generationConfig.retrievalSimilarityThreshold,
+  temperature: generationConfig.temperature,
+  maxTokens: generationConfig.maxTokens
+});
+const chatService = createChatService({
+  conversationRepository,
+  retrievalService,
+  generationService,
+  historyLimit: 6,
+  retrievalTopK: generationConfig.retrievalTopK,
+  similarityThreshold: generationConfig.retrievalSimilarityThreshold
 });
 
 app.use(helmet());
@@ -64,10 +100,18 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.use(
   '/api/documents',
-  createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService })
+  createDocumentsRouter({
+    storageProvider,
+    documentsRepository,
+    chunkService,
+    embeddingService,
+    documentOrchestrator
+  })
 );
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
+app.use('/api/generate', createGenerationRouter({ generationService }));
+app.use('/api/chat', createChatRouter({ chatService }));
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({

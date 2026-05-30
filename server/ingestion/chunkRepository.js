@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { DatabaseError } from '../errors.js';
+
 export class ChunkRepository {
   constructor(pool) {
     this.pool = pool;
@@ -7,7 +9,7 @@ export class ChunkRepository {
 
   async replaceDocumentChunks(documentId, chunks) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const client = await this.pool.connect();
@@ -48,7 +50,7 @@ export class ChunkRepository {
 
   async listDocumentChunks(documentId) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const result = await this.pool.query(

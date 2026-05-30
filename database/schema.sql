@@ -10,25 +10,42 @@ CREATE TABLE IF NOT EXISTS documents (
   storage_path text,
   extracted_text text,
   source_type text NOT NULL DEFAULT 'upload',
+  status text NOT NULL DEFAULT 'uploaded',
+  progress integer NOT NULL DEFAULT 0,
+  failure_reason text,
+  processing_started_at timestamptz,
+  ready_at timestamptz,
+  failed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS document_chunks (
+ALTER TABLE documents
+  ADD CONSTRAINT documents_status_check
+  CHECK (status IN ('uploaded', 'extracting', 'chunking', 'embedding', 'ready', 'failed'));
+
+ALTER TABLE documents
+  ADD CONSTRAINT documents_progress_check
+  CHECK (progress >= 0 AND progress <= 100);
+
+CREATE INDEX IF NOT EXISTS documents_status_idx ON documents (status);
+
+CREATE TABLE IF NOT EXISTS chunks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   chunk_index integer NOT NULL,
-  page_number integer,
   content text NOT NULL,
+  character_count integer NOT NULL,
   embedding vector(384),
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (document_id, chunk_index)
 );
 
-CREATE INDEX IF NOT EXISTS document_chunks_document_id_idx ON document_chunks (document_id);
-CREATE INDEX IF NOT EXISTS document_chunks_page_number_idx ON document_chunks (page_number);
+CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
+CREATE INDEX IF NOT EXISTS chunks_created_at_idx ON chunks (created_at DESC);
+CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx ON chunks USING hnsw (embedding vector_cosine_ops);
 
+-- Conversation tables are retained in schema form for future generation-layer conversation storage.
 CREATE TABLE IF NOT EXISTS chat_threads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id text,

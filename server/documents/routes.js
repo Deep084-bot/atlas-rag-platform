@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
-
 import multer from 'multer';
 import { Router } from 'express';
 
-import { extractTextFromUpload, validateDocumentUpload } from './extractText.js';
+import { classifyError, ValidationError } from '../errors.js';
+import { validateDocumentUpload } from './extractText.js';
 import { UploadValidationError } from './errors.js';
 
 function buildUploadMiddleware() {
@@ -15,7 +14,17 @@ function buildUploadMiddleware() {
   }).single('file');
 }
 
-export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService }) {
+function stripInternalDocumentFields(document) {
+  if (!document) {
+    return null;
+  }
+
+  const metadata = { ...document };
+  delete metadata.storagePath;
+  return metadata;
+}
+
+export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService, documentOrchestrator }) {
   const router = Router();
   const upload = buildUploadMiddleware();
 
@@ -23,18 +32,13 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
     try {
       const documents = await documentsRepository.listDocuments();
 
-      return response.json({
-        documents: documents.map((document) => {
-          const metadata = { ...document };
-          delete metadata.storagePath;
-          return metadata;
-        })
-      });
+      return response.json(documents.map(stripInternalDocumentFields));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to list documents.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_list_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -49,20 +53,18 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         });
       }
 
-      const metadata = { ...document };
-      delete metadata.storagePath;
-
       return response.json({
         document: {
-          ...metadata,
+          ...stripInternalDocumentFields(document),
           extractedText: document.extractedText
         }
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to read document.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_read_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -73,67 +75,82 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         if (error.code === 'LIMIT_FILE_SIZE') {
           return response.status(400).json({
             error: 'upload_validation_failed',
+            category: 'validation',
             message: 'File too large'
           });
         }
 
         const message = error instanceof Error ? error.message : 'Failed to process upload.';
-        return response.status(400).json({ error: 'upload_validation_failed', message });
+        return response.status(400).json({
+          error: 'upload_validation_failed',
+          category: 'validation',
+          message
+        });
       }
 
       if (!request.file) {
-        return response.status(400).json({ error: 'file_required' });
+        return response.status(400).json({
+          error: 'file_required',
+          category: 'validation',
+          message: 'File is required.'
+        });
       }
 
+      let savedFile = null;
+
       try {
-        try {
-          validateDocumentUpload({
-            mimeType: request.file.mimetype,
-            originalName: request.file.originalname
-          });
-        } catch (validationError) {
-          if (validationError instanceof UploadValidationError || validationError instanceof Error) {
-            return response.status(400).json({
-              error: 'upload_validation_failed',
-              message: validationError.message
-            });
-          }
+        const documentType = validateDocumentUpload({
+          mimeType: request.file.mimetype,
+          originalName: request.file.originalname
+        });
 
-          throw validationError;
-        }
-
-        const savedFile = await storageProvider.saveFile({
+        savedFile = await storageProvider.saveFile({
           buffer: request.file.buffer,
           originalName: request.file.originalname,
           mimeType: request.file.mimetype
         });
 
-        const extraction = await extractTextFromUpload({
-          buffer: request.file.buffer,
-          mimeType: request.file.mimetype,
-          originalName: request.file.originalname
-        });
-
         const persistedDocument = await documentsRepository.insertDocument({
-          id: savedFile.documentId ?? randomUUID(),
+          id: savedFile.documentId,
           userId: request.body?.userId ?? null,
           fileName: request.file.originalname,
-          fileType: extraction.fileType,
+          fileType: documentType.fileType,
           fileSizeBytes: request.file.size,
           storagePath: savedFile.storagePath,
-          extractedText: extraction.extractedText,
-          sourceType: 'upload'
+          extractedText: '',
+          sourceType: 'upload',
+          status: 'uploaded',
+          progress: 10
         });
 
+        void documentOrchestrator.startDocumentIngestion(persistedDocument.id);
+
         return response.status(201).json({
-          documentId: persistedDocument.id,
-          status: 'uploaded'
+          document: stripInternalDocumentFields(persistedDocument)
         });
       } catch (error_) {
-        const message = error_ instanceof Error ? error_.message : 'Unable to upload document.';
-        return response.status(500).json({
+        if (savedFile?.storagePath) {
+          try {
+            await storageProvider.deleteFile(savedFile.storagePath);
+          } catch {
+            // Best-effort cleanup.
+          }
+        }
+
+        if (error_ instanceof UploadValidationError || error_ instanceof ValidationError) {
+          return response.status(400).json({
+            error: 'upload_validation_failed',
+            category: 'validation',
+            message: error_.message
+          });
+        }
+
+        const classified = classifyError(error_);
+
+        return response.status(classified.statusCode).json({
           error: 'document_upload_failed',
-          message
+          category: classified.category,
+          message: classified.message
         });
       }
     });
@@ -156,10 +173,11 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         status: 'deleted'
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete document.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_delete_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -176,10 +194,11 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
       return response.json(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to chunk document.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_chunk_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -196,10 +215,11 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
       return response.json(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to read chunks.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_chunks_read_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -216,10 +236,11 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
       return response.json(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to embed document.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_embed_failed',
-        message
+        category: classified.category,
+        message: classified.message
       });
     }
   });
@@ -236,10 +257,44 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
       return response.json(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to read embedding status.';
-      return response.status(500).json({
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
         error: 'document_embedding_status_failed',
-        message
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
+  router.get('/:id/status', async (request, response) => {
+    try {
+      const document = await documentsRepository.getDocumentById(request.params.id);
+
+      if (!document) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      const publicDocument = stripInternalDocumentFields(document);
+
+      return response.json({
+        document: {
+          id: publicDocument.id,
+          status: publicDocument.status,
+          progress: publicDocument.progress,
+          failureReason: publicDocument.failureReason,
+          processingStartedAt: publicDocument.processingStartedAt,
+          readyAt: publicDocument.readyAt,
+          failedAt: publicDocument.failedAt
+        }
+      });
+    } catch (error) {
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
+        error: 'document_status_failed',
+        category: classified.category,
+        message: classified.message
       });
     }
   });

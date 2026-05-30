@@ -1,5 +1,7 @@
 import { toSql } from 'pgvector';
 
+import { DatabaseError } from '../errors.js';
+
 export class EmbeddingRepository {
   constructor(pool) {
     this.pool = pool;
@@ -7,7 +9,7 @@ export class EmbeddingRepository {
 
   async getChunksForDocument(documentId) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const result = await this.pool.query(
@@ -32,7 +34,7 @@ export class EmbeddingRepository {
 
   async updateChunkEmbedding(chunkId, embedding) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const result = await this.pool.query(
@@ -50,7 +52,7 @@ export class EmbeddingRepository {
 
   async countTotalChunks(documentId) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const result = await this.pool.query(
@@ -67,7 +69,7 @@ export class EmbeddingRepository {
 
   async countEmbeddedChunks(documentId) {
     if (this.pool === null) {
-      throw new Error('DATABASE_URL is not configured.');
+      throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
     const result = await this.pool.query(

@@ -1,3 +1,5 @@
+import { ValidationError } from '../errors.js';
+
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
 
@@ -14,7 +16,7 @@ export function createSearchService({ embeddingProvider, searchRepository, defau
       const normalizedQuery = typeof query === 'string' ? query.trim() : '';
 
       if (!normalizedQuery) {
-        throw new Error('query is required.');
+        throw new ValidationError('query is required.');
       }
 
       const requestedLimit = parsePositiveInteger(limit, defaultTopK);

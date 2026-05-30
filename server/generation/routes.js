@@ -2,14 +2,12 @@ import { Router } from 'express';
 
 import { classifyError } from '../errors.js';
 
-export function createSearchRouter({ searchService }) {
+export function createGenerationRouter({ generationService }) {
   const router = Router();
 
   router.post('/', async (request, response) => {
     try {
-      const result = await searchService.search(request.body?.query, {
-        limit: request.body?.limit
-      });
+      const result = await generationService.generate(request.body?.question);
 
       return response.json(result);
     } catch (error) {
@@ -17,14 +15,14 @@ export function createSearchRouter({ searchService }) {
 
       if (classified.category === 'validation') {
         return response.status(400).json({
-          error: 'search_validation_failed',
+          error: 'generation_validation_failed',
           category: classified.category,
           message: classified.message
         });
       }
 
       return response.status(classified.statusCode).json({
-        error: 'semantic_search_failed',
+        error: 'generation_failed',
         category: classified.category,
         message: classified.message
       });
