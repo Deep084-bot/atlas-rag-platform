@@ -35,6 +35,9 @@ Create a local `.env` file with at least:
 - `GROQ_API_KEY`
 - `GROQ_MODEL`
 - `DATABASE_URL`
+- `BETTER_AUTH_URL`
+- `BETTER_AUTH_SECRET`
+- `WEB_ORIGIN`
 - `HF_API_KEY`
 - `EMBEDDING_PROVIDER`
 - `VITE_API_BASE_URL`

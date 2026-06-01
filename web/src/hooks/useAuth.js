@@ -1,65 +1,72 @@
-import { useEffect, useState } from 'react';
-import * as authApi from '../api/auth.js';
+import { useState } from 'react';
+
+import { authClient, useSession } from '../api/auth.js';
 
 export function useAuth() {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: session, isPending, refetch } = useSession();
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const payload = await authApi.getSession();
-        if (!mounted) return;
-        setUser(payload.user ?? null);
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function signup({ email, password }) {
-    setIsLoading(true);
+  const user = session?.user ?? null;
+  async function signup({ email, password, name }) {
+    setIsSaving(true);
     try {
-      const { user } = await authApi.signup({ email, password });
-      setUser(user ?? null);
-      return { ok: true, user };
+      const result = await authClient.signUp.email({
+        email,
+        password,
+        name: name || email.split('@')[0] || email,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      await refetch();
+      return { ok: true, user: result.data?.user ?? null };
     } catch (err) {
       return { ok: false, error: err };
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   }
 
   async function login({ email, password }) {
-    setIsLoading(true);
+    setIsSaving(true);
     try {
-      const { user } = await authApi.login({ email, password });
-      setUser(user ?? null);
-      return { ok: true, user };
+      const result = await authClient.signIn.email({
+        email,
+        password,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      await refetch();
+      return { ok: true, user: result.data?.user ?? null };
     } catch (err) {
       return { ok: false, error: err };
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   }
 
   async function logout() {
-    setIsLoading(true);
+    setIsSaving(true);
     try {
-      await authApi.logout();
-      setUser(null);
+      const result = await authClient.signOut();
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      await refetch();
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err };
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   }
 
-  return { user, isLoading, signup, login, logout };
+  return { user, session, isLoading: isPending || isSaving, signup, login, logout };
 }

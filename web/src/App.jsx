@@ -164,9 +164,18 @@ function App() {
                   {authVisible && (
                     <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-white/10 bg-slate-950/80 p-4">
                       <label className="block text-xs text-slate-300">Email</label>
-                      <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="mt-1 mb-2 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white" />
+                      <input
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        className="mt-1 mb-2 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white"
+                      />
                       <label className="block text-xs text-slate-300">Password</label>
-                      <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="mt-1 mb-3 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white" />
+                      <input
+                        type="password"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="mt-1 mb-3 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white"
+                      />
                       <div className="flex gap-2">
                         <button
                           type="button"

@@ -1,154 +1,128 @@
-import express from 'express';
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { pgSchema, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { Pool } from "pg";
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 
-const router = express.Router();
+const authSchema = pgSchema("better_auth");
 
-// Environment variables:
-// BETTER_AUTH_BASE_URL - base URL for Better Auth management endpoints (e.g. https://auth.example.com)
-// BETTER_AUTH_API_KEY - service API key for server-to-server calls (optional)
-// COOKIE_NAME - optional cookie name for session (defaults to ba_session)
+export const user = authSchema.table("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  image: text("image"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
-const BASE = process.env.BETTER_AUTH_BASE_URL ?? null;
-const COOKIE_NAME = process.env.COOKIE_NAME ?? 'ba_session';
+export const session = authSchema.table(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("session_userId_idx").on(table.userId)],
+);
 
-async function introspectSession(token) {
-  if (!BASE || !token) return null;
+export const account = authSchema.table(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("account_userId_idx").on(table.userId)],
+);
+
+export const verification = authSchema.table(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+export const authDbPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+export const authDb = drizzle(authDbPool, {
+  schema: {
+    user,
+    session,
+    account,
+    verification,
+  },
+});
+
+const authServerBaseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:8787";
+const trustedFrontendOrigin = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+
+export const auth = betterAuth({
+  baseURL: authServerBaseURL,
+  secret: process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET,
+  database: drizzleAdapter(authDb, {
+    provider: "pg",
+    schema: {
+      user,
+      session,
+      account,
+      verification,
+    },
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  trustedOrigins: [trustedFrontendOrigin],
+});
+
+export const authHandler = toNodeHandler(auth);
+
+export async function authMiddleware(req, _res, next) {
+  if (req.path?.startsWith("/api/auth")) {
+    return next();
+  }
 
   try {
-    const resp = await fetch(new URL('/auth/session', BASE).toString(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(process.env.BETTER_AUTH_API_KEY ? { 'x-api-key': process.env.BETTER_AUTH_API_KEY } : {})
-      }
+    const sessionResult = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
     });
 
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    // Expecting { user: { id, email, ... } } or similar shape. Return user object.
-    return data.user ?? data;
-  } catch (err) {
-    return null;
-  }
-}
-
-// Middleware to populate req.user when a valid session exists.
-export async function authMiddleware(req, _res, next) {
-  try {
-    const cookieToken = req.cookies?.[COOKIE_NAME];
-    const authHeader = req.headers?.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null;
-    const token = authHeader || cookieToken || null;
-
-    if (!token || !BASE) {
-      // No token or no configured auth provider — leave req.user undefined and continue.
-      return next();
-    }
-
-    const user = await introspectSession(token);
-    if (user) {
-      req.user = user;
-    }
-  } catch (err) {
-    // don't block requests on auth failures — req.user remains undefined
+    req.session = sessionResult?.session ?? null;
+    req.user = sessionResult?.user ?? null;
+  } catch {
+    req.session = null;
+    req.user = null;
   }
 
   return next();
 }
 
-// Auth router: lightweight proxy endpoints for signup/login/logout/session
-router.post('/signup', async (req, res) => {
-  if (!BASE) return res.status(500).json({ error: 'auth_not_configured' });
-
-  try {
-    const resp = await fetch(new URL('/auth/signup', BASE).toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(process.env.BETTER_AUTH_API_KEY ? { 'x-api-key': process.env.BETTER_AUTH_API_KEY } : {}) },
-      body: JSON.stringify(req.body)
-    });
-
-    const payload = await resp.json();
-
-    if (!resp.ok) {
-      return res.status(resp.status).json(payload);
-    }
-
-    // Accept token from provider and set cookie if provided
-    const token = payload?.token ?? payload?.session_token ?? null;
-    if (token) {
-      res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-    }
-
-    return res.json({ user: payload.user ?? payload });
-  } catch (err) {
-    return res.status(500).json({ error: 'signup_failed' });
-  }
-});
-
-router.post('/login', async (req, res) => {
-  if (!BASE) return res.status(500).json({ error: 'auth_not_configured' });
-
-  try {
-    const resp = await fetch(new URL('/auth/login', BASE).toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(process.env.BETTER_AUTH_API_KEY ? { 'x-api-key': process.env.BETTER_AUTH_API_KEY } : {}) },
-      body: JSON.stringify(req.body)
-    });
-
-    const payload = await resp.json();
-
-    if (!resp.ok) {
-      return res.status(resp.status).json(payload);
-    }
-
-    const token = payload?.token ?? payload?.session_token ?? null;
-    if (token) {
-      res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-    }
-
-    return res.json({ user: payload.user ?? payload });
-  } catch (err) {
-    return res.status(500).json({ error: 'login_failed' });
-  }
-});
-
-router.post('/logout', async (req, res) => {
-  if (!BASE) {
-    res.clearCookie(COOKIE_NAME);
-    return res.json({ ok: true });
-  }
-
-  try {
-    const cookieToken = req.cookies?.[COOKIE_NAME];
-    const authHeader = req.headers?.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null;
-    const token = authHeader || cookieToken || null;
-
-    if (token) {
-      // Attempt to inform provider
-      await fetch(new URL('/auth/logout', BASE).toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(process.env.BETTER_AUTH_API_KEY ? { 'x-api-key': process.env.BETTER_AUTH_API_KEY } : {}) },
-        body: JSON.stringify({ token })
-      }).catch(() => {});
-    }
-
-    res.clearCookie(COOKIE_NAME);
-    return res.json({ ok: true });
-  } catch (err) {
-    res.clearCookie(COOKIE_NAME);
-    return res.status(500).json({ error: 'logout_failed' });
-  }
-});
-
-router.get('/session', async (req, res) => {
-  if (!BASE) return res.status(200).json({ user: null });
-
-  const cookieToken = req.cookies?.[COOKIE_NAME];
-  const authHeader = req.headers?.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null;
-  const token = authHeader || cookieToken || null;
-
-  if (!token) return res.status(200).json({ user: null });
-
-  const user = await introspectSession(token);
-  return res.json({ user: user ?? null });
-});
-
-export default router;
+export default auth;

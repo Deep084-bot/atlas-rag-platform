@@ -30,7 +30,7 @@ import { createSearchService } from './search/searchService.js';
 import { createRetrievalRouter } from './retrieval/routes.js';
 import { createRetrievalService } from './retrieval/retrievalService.js';
 import { verifyDatabaseConnection } from './db.js';
-import authRouter, { authMiddleware } from './auth.js';
+import { authHandler, authMiddleware } from './auth.js';
 
 dotenv.config();
 
@@ -98,8 +98,10 @@ app.use(
     credentials: true
   })
 );
-app.use(express.json({ limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+app.all('/api/auth/*', authHandler);
+app.use(express.json({ limit: '2mb' }));
 
 app.use(
   '/api/documents',
@@ -111,9 +113,7 @@ app.use(
     documentOrchestrator
   })
 );
-// mount auth endpoints and populate req.user when possible (non-blocking)
 app.use(authMiddleware);
-app.use('/api/auth', authRouter);
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 app.use('/api/generate', createGenerationRouter({ generationService }));
