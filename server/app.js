@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 
 import { getPool } from "./db.js";
 import { DocumentsRepository } from './documents/repository.js';
@@ -29,6 +30,7 @@ import { createSearchService } from './search/searchService.js';
 import { createRetrievalRouter } from './retrieval/routes.js';
 import { createRetrievalService } from './retrieval/retrievalService.js';
 import { verifyDatabaseConnection } from './db.js';
+import authRouter, { authMiddleware } from './auth.js';
 
 dotenv.config();
 
@@ -89,6 +91,7 @@ const chatService = createChatService({
 });
 
 app.use(helmet());
+app.use(cookieParser());
 app.use(
   cors({
     origin: process.env.WEB_ORIGIN ?? true,
@@ -108,6 +111,9 @@ app.use(
     documentOrchestrator
   })
 );
+// mount auth endpoints and populate req.user when possible (non-blocking)
+app.use(authMiddleware);
+app.use('/api/auth', authRouter);
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 app.use('/api/generate', createGenerationRouter({ generationService }));

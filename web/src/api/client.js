@@ -27,7 +27,8 @@ export async function requestJson(path, { method = 'GET', body, signal } = {}) {
   const options = {
     method,
     signal,
-    headers: {}
+    headers: {},
+    credentials: 'include'
   };
 
   if (body instanceof FormData) {

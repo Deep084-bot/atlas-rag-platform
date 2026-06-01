@@ -8,6 +8,7 @@ import { useChat } from './hooks/useChat.js';
 import { useGenerate } from './hooks/useGenerate.js';
 import { useSearch } from './hooks/useSearch.js';
 import { useUpload } from './hooks/useUpload.js';
+import { useAuth } from './hooks/useAuth.js';
 
 function StatusPill({ status, children }) {
   const styles =
@@ -60,6 +61,11 @@ function App() {
   const search = useSearch();
   const generation = useGenerate();
   const chat = useChat();
+  const auth = useAuth();
+
+  const [authVisible, setAuthVisible] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
 
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState('');
@@ -133,6 +139,55 @@ function App() {
             <StatusPill status={healthError ? 'error' : health ? 'success' : 'loading'}>
               {healthError ? 'API error' : health ? 'API connected' : 'Checking API'}
             </StatusPill>
+            <div className="relative">
+              {auth.user ? (
+                <div className="flex items-center gap-3">
+                  <div className="text-sm text-slate-300">{auth.user.email ?? auth.user.id}</div>
+                  <button
+                    type="button"
+                    onClick={() => auth.logout().catch(() => {})}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                  >
+                    Log out
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setAuthVisible((v) => !v)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                  >
+                    Log in / Sign up
+                  </button>
+
+                  {authVisible && (
+                    <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-white/10 bg-slate-950/80 p-4">
+                      <label className="block text-xs text-slate-300">Email</label>
+                      <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="mt-1 mb-2 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white" />
+                      <label className="block text-xs text-slate-300">Password</label>
+                      <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="mt-1 mb-3 w-full rounded-md bg-slate-900/60 px-2 py-2 text-sm text-white" />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => { await auth.login({ email: authEmail, password: authPassword }).catch(()=>{}); setAuthVisible(false); }}
+                          className="flex-1 rounded-full bg-atlas-teal px-3 py-2 text-sm font-semibold text-slate-950"
+                        >
+                          Log in
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => { await auth.signup({ email: authEmail, password: authPassword }).catch(()=>{}); setAuthVisible(false); }}
+                          className="flex-1 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200"
+                        >
+                          Sign up
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
