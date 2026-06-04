@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChatTranscript } from './components/ChatTranscript.jsx';
 import { Panel } from './components/Panel.jsx';
 import { SourcesList } from './components/SourcesList.jsx';
+import { requestJson } from './api/client.js';
 import { useDocuments } from './hooks/useDocuments.js';
 import { useChat } from './hooks/useChat.js';
 import { useGenerate } from './hooks/useGenerate.js';
@@ -75,13 +76,7 @@ function App() {
 
     async function loadHealth() {
       try {
-        const response = await fetch('/api/health', { signal: controller.signal });
-
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await requestJson('/api/health', { signal: controller.signal });
         setHealth(data);
       } catch (error_) {
         if (error_ instanceof DOMException && error_.name === 'AbortError') {
