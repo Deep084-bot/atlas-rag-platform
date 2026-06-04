@@ -75,33 +75,40 @@ export function createChatService({
   similarityThreshold = 0.5
 }) {
   return {
-    async chat({ conversationId, message } = {}) {
+    async chat({ conversationId, message, userId } = {}) {
       const normalizedMessage = typeof message === 'string' ? message.trim() : '';
 
       if (!normalizedMessage) {
         throw new ValidationError('message is required.');
       }
 
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
       const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
       let conversation = null;
 
       if (normalizedConversationId) {
-        conversation = await conversationRepository.getConversationById(normalizedConversationId);
+        conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
 
         if (!conversation) {
           return null;
         }
       } else {
-        conversation = await conversationRepository.createConversation();
+        conversation = await conversationRepository.createConversation({ userId: normalizedUserId });
       }
 
       const history = normalizedConversationId
-        ? await conversationRepository.listRecentMessages(conversation.id, parsePositiveInteger(historyLimit, 6))
+        ? await conversationRepository.listRecentMessagesForUser(conversation.id, normalizedUserId, parsePositiveInteger(historyLimit, 6))
         : [];
 
       const retrieval = await retrievalService.retrieve(normalizedMessage, {
         topK: parsePositiveInteger(retrievalTopK, 6),
-        similarityThreshold
+        similarityThreshold,
+        userId: normalizedUserId
       });
 
       const sources = retrieval.retrievedContext ?? [];
@@ -120,7 +127,8 @@ export function createChatService({
         conversationId: conversation.id,
         userMessage: normalizedMessage,
         assistantMessage: generation.answer,
-        assistantSources: sources
+        assistantSources: sources,
+        userId: normalizedUserId
       });
 
       return {

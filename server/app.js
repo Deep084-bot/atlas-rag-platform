@@ -102,6 +102,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.all('/api/auth/*', authHandler);
 app.use(express.json({ limit: '2mb' }));
+app.use(authMiddleware);
 
 app.use(
   '/api/documents',
@@ -113,7 +114,6 @@ app.use(
     documentOrchestrator
   })
 );
-app.use(authMiddleware);
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 app.use('/api/generate', createGenerationRouter({ generationService }));

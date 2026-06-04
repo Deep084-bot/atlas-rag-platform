@@ -7,8 +7,19 @@ export function createSearchRouter({ searchService }) {
 
   router.post('/', async (request, response) => {
     try {
+      const userId = request.user?.id;
+
+      if (!userId) {
+        return response.status(401).json({
+          error: 'unauthorized',
+          category: 'authentication',
+          message: 'Authentication required.'
+        });
+      }
+
       const result = await searchService.search(request.body?.query, {
-        limit: request.body?.limit
+        limit: request.body?.limit,
+        userId
       });
 
       return response.json(result);

@@ -24,13 +24,34 @@ function stripInternalDocumentFields(document) {
   return metadata;
 }
 
+function requireAuthenticatedUser(request, response) {
+  const userId = request.user?.id;
+
+  if (!userId) {
+    response.status(401).json({
+      error: 'unauthorized',
+      category: 'authentication',
+      message: 'Authentication required.'
+    });
+    return null;
+  }
+
+  return userId;
+}
+
 export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService, documentOrchestrator }) {
   const router = Router();
   const upload = buildUploadMiddleware();
 
-  router.get('/', async (_request, response) => {
+  router.get('/', async (request, response) => {
     try {
-      const documents = await documentsRepository.listDocuments();
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const documents = await documentsRepository.listDocumentsForUser(userId);
 
       return response.json(documents.map(stripInternalDocumentFields));
     } catch (error) {
@@ -45,7 +66,13 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.get('/:id', async (request, response) => {
     try {
-      const document = await documentsRepository.getDocumentById(request.params.id);
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
 
       if (!document) {
         return response.status(404).json({
@@ -96,6 +123,12 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         });
       }
 
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
       let savedFile = null;
 
       try {
@@ -112,7 +145,7 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
         const persistedDocument = await documentsRepository.insertDocument({
           id: savedFile.documentId,
-          userId: request.body?.userId ?? null,
+          userId,
           fileName: request.file.originalname,
           fileType: documentType.fileType,
           fileSizeBytes: request.file.size,
@@ -158,7 +191,13 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.delete('/:id', async (request, response) => {
     try {
-      const deletedDocument = await documentsRepository.deleteDocumentById(request.params.id);
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const deletedDocument = await documentsRepository.deleteDocumentByIdForUser(request.params.id, userId);
 
       if (!deletedDocument) {
         return response.status(404).json({
@@ -184,6 +223,20 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.post('/:id/chunk', async (request, response) => {
     try {
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
+
+      if (!document) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
       const result = await chunkService.chunkDocument(request.params.id);
 
       if (!result) {
@@ -205,6 +258,20 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.get('/:id/chunks', async (request, response) => {
     try {
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
+
+      if (!document) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
       const result = await chunkService.listDocumentChunks(request.params.id);
 
       if (!result) {
@@ -226,6 +293,20 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.post('/:id/embed', async (request, response) => {
     try {
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
+
+      if (!document) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
       const result = await embeddingService.embedDocument(request.params.id);
 
       if (!result) {
@@ -268,7 +349,13 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.get('/:id/status', async (request, response) => {
     try {
-      const document = await documentsRepository.getDocumentById(request.params.id);
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
 
       if (!document) {
         return response.status(404).json({

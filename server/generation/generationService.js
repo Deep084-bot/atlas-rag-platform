@@ -63,11 +63,17 @@ export function createGenerationService({
   }
 
   return {
-    async generate(question) {
+    async generate(question, { userId } = {}) {
       const normalizedQuestion = typeof question === 'string' ? question.trim() : '';
 
       if (!normalizedQuestion) {
         throw new ValidationError('question is required.');
+      }
+
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
       }
 
       const requestedTopK = parsePositiveInteger(defaultTopK, 6);
@@ -75,7 +81,8 @@ export function createGenerationService({
       const effectiveThreshold = parseNumber(defaultSimilarityThreshold, 0.5);
       const retrieval = await retrievalService.retrieve(normalizedQuestion, {
         topK: effectiveTopK,
-        similarityThreshold: effectiveThreshold
+        similarityThreshold: effectiveThreshold,
+        userId: normalizedUserId
       });
 
       const sources = retrieval.retrievedContext ?? [];

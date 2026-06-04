@@ -7,7 +7,17 @@ export function createGenerationRouter({ generationService }) {
 
   router.post('/', async (request, response) => {
     try {
-      const result = await generationService.generate(request.body?.question);
+      const userId = request.user?.id;
+
+      if (!userId) {
+        return response.status(401).json({
+          error: 'unauthorized',
+          category: 'authentication',
+          message: 'Authentication required.'
+        });
+      }
+
+      const result = await generationService.generate(request.body?.question, { userId });
 
       return response.json(result);
     } catch (error) {

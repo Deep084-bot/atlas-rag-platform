@@ -7,9 +7,20 @@ export function createRetrievalRouter({ retrievalService }) {
 
   router.post('/', async (request, response) => {
     try {
+      const userId = request.user?.id;
+
+      if (!userId) {
+        return response.status(401).json({
+          error: 'unauthorized',
+          category: 'authentication',
+          message: 'Authentication required.'
+        });
+      }
+
       const result = await retrievalService.retrieve(request.body?.query, {
         topK: request.body?.topK,
-        similarityThreshold: request.body?.similarityThreshold
+        similarityThreshold: request.body?.similarityThreshold,
+        userId
       });
 
       return response.json(result);

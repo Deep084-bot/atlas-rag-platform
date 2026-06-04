@@ -7,9 +7,20 @@ export function createChatRouter({ chatService }) {
 
   router.post('/', async (request, response) => {
     try {
+      const userId = request.user?.id;
+
+      if (!userId) {
+        return response.status(401).json({
+          error: 'unauthorized',
+          category: 'authentication',
+          message: 'Authentication required.'
+        });
+      }
+
       const result = await chatService.chat({
         conversationId: request.body?.conversationId,
-        message: request.body?.message
+        message: request.body?.message,
+        userId
       });
 
       if (!result) {
