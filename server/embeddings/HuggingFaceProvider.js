@@ -40,16 +40,20 @@ function normalizeVector(vector) {
     return vector.map((value) => value / magnitude);
 }
 
-function normalizeEmbeddingOutput(output) {
+function normalizeEmbeddingOutput(output, textsCount) {
     if (!Array.isArray(output) || output.length === 0) {
         return [];
     }
 
     if (isBatchMatrix(output)) {
-        return output.map((item) => normalizeEmbeddingOutput(item));
+        return output.map((item) => normalizeEmbeddingOutput(item, 1));
     }
 
     if (isTokenMatrix(output)) {
+        if (textsCount > 1 && output.length === textsCount) {
+            return output.map((vec) => normalizeVector(vec.map((value) => Number(value))));
+        }
+
         return normalizeVector(averageVectors(output));
     }
 
@@ -117,7 +121,7 @@ export class HuggingFaceProvider extends EmbeddingProvider {
                 cause: error
             });
         }
-        const normalized = normalizeEmbeddingOutput(payload);
+        const normalized = normalizeEmbeddingOutput(payload, texts.length);
 
         if (texts.length === 1 && Array.isArray(normalized) && normalized.length > 0 && typeof normalized[0] === 'number') {
             return [normalized];

@@ -136,6 +136,38 @@ export function createChatService({
         answer: generation.answer,
         sources
       };
+    },
+
+    async listConversations(userId) {
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
+      return await conversationRepository.listConversationsForUser(normalizedUserId);
+    },
+
+    async getConversationMessages(conversationId, userId) {
+      const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
+
+      if (!normalizedConversationId) {
+        throw new ValidationError('conversationId is required.');
+      }
+
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
+      const conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
+
+      if (!conversation) {
+        return null;
+      }
+
+      return await conversationRepository.getMessagesByConversationId(normalizedConversationId);
     }
   };
 }

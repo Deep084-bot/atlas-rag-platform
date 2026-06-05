@@ -129,6 +129,49 @@ export class ConversationRepository {
     return result.rows.reverse().map((row) => this.toConversationMessage(row));
   }
 
+  async listConversationsForUser(userId) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        SELECT id, user_id, title, created_at, updated_at
+        FROM chat_threads
+        WHERE user_id = $1
+        ORDER BY updated_at DESC
+      `,
+      [userId]
+    );
+
+    return result.rows.map((row) => this.toConversation(row));
+  }
+
+  async getMessagesByConversationId(conversationId) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        SELECT id, thread_id, role, content, citations, created_at
+        FROM chat_messages
+        WHERE thread_id = $1
+        ORDER BY created_at ASC
+      `,
+      [conversationId]
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      conversationId: row.thread_id,
+      role: row.role,
+      content: row.content,
+      citations: row.citations,
+      createdAt: row.created_at
+    }));
+  }
+
   async appendConversationTurn({ conversationId, userMessage, assistantMessage, assistantSources = [] }) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
