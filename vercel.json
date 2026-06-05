@@ -1,4 +1,7 @@
 {
   "buildCommand": "npm run build:web",
-  "outputDirectory": "web/dist"
+  "outputDirectory": "web/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
