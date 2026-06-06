@@ -61,3 +61,11 @@ export async function sendChatMessage({ conversationId, message }) {
     }
   });
 }
+
+export async function listConversations() {
+  return requestJson('/api/chat/conversations');
+}
+
+export async function getConversationMessages(conversationId) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`);
+}

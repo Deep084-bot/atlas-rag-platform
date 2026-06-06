@@ -1,71 +1,69 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
-import { sendChatMessage } from '../api/atlasApi.js';
+import { sendChatMessage, listConversations, getConversationMessages } from '../api/atlasApi.js';
 
-const CONVERSATION_KEY = 'atlas.chat.conversationId';
-const MESSAGE_KEY_PREFIX = 'atlas.chat.messages.';
-
-function loadStoredMessages(conversationId) {
-  if (!conversationId) {
-    return [];
-  }
-
-  try {
-    const raw = localStorage.getItem(`${MESSAGE_KEY_PREFIX}${conversationId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistMessages(conversationId, messages) {
-  if (!conversationId) {
-    return;
-  }
-
-  localStorage.setItem(`${MESSAGE_KEY_PREFIX}${conversationId}`, JSON.stringify(messages));
-}
-
-function loadConversationId() {
-  try {
-    return localStorage.getItem(CONVERSATION_KEY) ?? '';
-  } catch {
-    return '';
-  }
+function normalizeMessage(msg) {
+  return {
+    id: msg.id,
+    role: msg.role,
+    content: msg.content,
+    sources: msg.citations ?? msg.sources ?? [],
+    createdAt: msg.createdAt,
+    conversationId: msg.conversationId ?? msg.threadId,
+  };
 }
 
 export function useChat() {
-  const [conversationId, setConversationId] = useState(loadConversationId);
-  const [messages, setMessages] = useState(() => loadStoredMessages(loadConversationId()));
+  const [conversations, setConversations] = useState([]);
+  const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [conversationsError, setConversationsError] = useState('');
+  const [activeConversationId, setActiveConversationId] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState('');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!conversationId) {
-      try {
-        localStorage.removeItem(CONVERSATION_KEY);
-      } catch {
-        // ignore storage failures
-      }
-      setMessages([]);
-      return;
+  const activeRequestRef = useRef('');
+
+  const fetchConversations = useCallback(async () => {
+    setConversationsLoading(true);
+    setConversationsError('');
+    try {
+      const data = await listConversations();
+      setConversations(data);
+    } catch (err) {
+      setConversationsError(err instanceof Error ? err.message : 'Failed to load conversations');
+    } finally {
+      setConversationsLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  const selectConversation = useCallback(async (id) => {
+    setActiveConversationId(id);
+    setMessages([]);
+    setMessagesLoading(true);
+    setMessagesError('');
+    activeRequestRef.current = id;
 
     try {
-      localStorage.setItem(CONVERSATION_KEY, conversationId);
-
-      if (messages.length === 0) {
-        setMessages(loadStoredMessages(conversationId));
+      const data = await getConversationMessages(id);
+      if (activeRequestRef.current !== id) return;
+      setMessages(data.map(normalizeMessage));
+    } catch (err) {
+      if (activeRequestRef.current !== id) return;
+      setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+    } finally {
+      if (activeRequestRef.current === id) {
+        setMessagesLoading(false);
       }
-    } catch {
-      // ignore storage failures
     }
-  }, [conversationId, messages.length]);
-
-  useEffect(() => {
-    persistMessages(conversationId, messages);
-  }, [conversationId, messages]);
+  }, []);
 
   async function send() {
     const trimmedMessage = message.trim();
@@ -81,29 +79,39 @@ export function useChat() {
     const userMessage = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: trimmedMessage
+      content: trimmedMessage,
     };
 
     setMessages((currentMessages) => [...currentMessages, userMessage]);
     setMessage('');
 
     try {
-      const result = await sendChatMessage({ conversationId, message: trimmedMessage });
-      const nextConversationId = result.conversationId ?? conversationId;
+      const result = await sendChatMessage({
+        conversationId: activeConversationId || undefined,
+        message: trimmedMessage,
+      });
 
-      if (nextConversationId && nextConversationId !== conversationId) {
-        setConversationId(nextConversationId);
+      const nextConversationId = result.conversationId ?? activeConversationId;
+      const isNewConversation = nextConversationId && nextConversationId !== activeConversationId;
+
+      if (isNewConversation) {
+        setActiveConversationId(nextConversationId);
       }
 
       const assistantMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: result.answer ?? '',
-        sources: result.sources ?? []
+        sources: result.sources ?? [],
       };
 
       setMessages((currentMessages) => [...currentMessages, assistantMessage]);
       setStatus('success');
+
+      if (isNewConversation) {
+        await fetchConversations();
+      }
+
       return result;
     } catch (error_) {
       setStatus('error');
@@ -113,15 +121,7 @@ export function useChat() {
   }
 
   function resetConversation() {
-    if (conversationId) {
-      try {
-        localStorage.removeItem(`${MESSAGE_KEY_PREFIX}${conversationId}`);
-      } catch {
-        // ignore storage failures
-      }
-    }
-
-    setConversationId('');
+    setActiveConversationId('');
     setMessages([]);
     setMessage('');
     setStatus('idle');
@@ -129,15 +129,21 @@ export function useChat() {
   }
 
   return {
-    conversationId,
-    setConversationId,
+    conversations,
+    conversationsLoading,
+    conversationsError,
+    activeConversationId,
     messages,
+    messagesLoading,
+    messagesError,
     message,
     setMessage,
     status,
     error,
     send,
     resetConversation,
-    isLoading: status === 'loading'
+    selectConversation,
+    fetchConversations,
+    isLoading: status === 'loading',
   };
 }
