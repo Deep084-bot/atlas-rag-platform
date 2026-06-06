@@ -1,5 +1,25 @@
 import { ValidationError } from '../errors.js';
 
+const UNTITLED_THREAD = 'Untitled thread';
+
+function generateTitle(message) {
+  let title = message.trim();
+  title = title.replace(/[.!?,;:]+$/u, '');
+
+  if (title.length > 60) {
+    const truncated = title.slice(0, 60);
+    const lastSpace = truncated.lastIndexOf(' ');
+
+    if (lastSpace >= 40) {
+      title = truncated.slice(0, lastSpace);
+    } else {
+      title = truncated;
+    }
+  }
+
+  return title.trim();
+}
+
 const CHAT_SYSTEM_INSTRUCTIONS = [
   'You are Atlas, a conversational assistant for this document system.',
   'Use the conversation history to resolve follow-up questions and pronouns.',
@@ -131,11 +151,70 @@ export function createChatService({
         userId: normalizedUserId
       });
 
+      if (conversation.title === UNTITLED_THREAD) {
+        const title = generateTitle(normalizedMessage);
+        await conversationRepository.updateConversationTitle(conversation.id, title);
+      }
+
       return {
         conversationId: conversation.id,
         answer: generation.answer,
         sources
       };
+    },
+
+    async renameConversation(conversationId, userId, title) {
+      const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
+
+      if (!normalizedConversationId) {
+        throw new ValidationError('conversationId is required.');
+      }
+
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
+      const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+
+      if (!normalizedTitle) {
+        throw new ValidationError('title is required.');
+      }
+
+      if (normalizedTitle.length > 100) {
+        throw new ValidationError('title must be 100 characters or fewer.');
+      }
+
+      const conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
+
+      if (!conversation) {
+        return null;
+      }
+
+      return await conversationRepository.updateConversationTitle(normalizedConversationId, normalizedTitle);
+    },
+
+    async deleteConversation(conversationId, userId) {
+      const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
+
+      if (!normalizedConversationId) {
+        throw new ValidationError('conversationId is required.');
+      }
+
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
+      const conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
+
+      if (!conversation) {
+        return null;
+      }
+
+      return await conversationRepository.deleteConversation(normalizedConversationId);
     },
 
     async listConversations(userId) {

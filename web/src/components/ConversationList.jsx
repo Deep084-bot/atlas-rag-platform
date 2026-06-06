@@ -1,6 +1,6 @@
 import { ConversationItem } from './ConversationItem.jsx';
 
-export function ConversationList({ conversations, activeConversationId, isLoading, onSelect }) {
+export function ConversationList({ conversations, activeConversationId, isLoading, onSelect, onRename, onDelete }) {
   if (isLoading) {
     return <p className="px-3 text-sm text-slate-400">Loading conversations&hellip;</p>;
   }
@@ -17,6 +17,8 @@ export function ConversationList({ conversations, activeConversationId, isLoadin
           conversation={conversation}
           isActive={conversation.id === activeConversationId}
           onSelect={onSelect}
+          onRename={onRename}
+          onDelete={onDelete}
         />
       ))}
     </div>

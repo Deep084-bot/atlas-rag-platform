@@ -1,6 +1,6 @@
 import { ConversationList } from './ConversationList.jsx';
 
-export function Sidebar({ conversations, activeConversationId, isLoading, onSelect, onNew }) {
+export function Sidebar({ conversations, activeConversationId, isLoading, onSelect, onNew, onRename, onDelete }) {
   return (
     <aside className="flex w-72 flex-col border-r border-white/10 bg-slate-950/30">
       <div className="border-b border-white/10 p-4">
@@ -18,6 +18,8 @@ export function Sidebar({ conversations, activeConversationId, isLoading, onSele
           activeConversationId={activeConversationId}
           isLoading={isLoading}
           onSelect={onSelect}
+          onRename={onRename}
+          onDelete={onDelete}
         />
       </div>
     </aside>

@@ -69,3 +69,16 @@ export async function listConversations() {
 export async function getConversationMessages(conversationId) {
   return requestJson(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`);
 }
+
+export async function renameConversation(id, title) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { title }
+  });
+}
+
+export async function deleteConversation(id) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+}

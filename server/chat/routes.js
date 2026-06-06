@@ -92,6 +92,89 @@ export function createChatRouter({ chatService }) {
     }
   });
 
+  router.patch('/conversations/:id', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const result = await chatService.renameConversation(
+        request.params.id,
+        userId,
+        request.body?.title
+      );
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'conversation_not_found',
+          category: 'validation',
+          message: 'Conversation not found.'
+        });
+      }
+
+      return response.json(result);
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_rename_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_rename_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
+  router.delete('/conversations/:id', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const result = await chatService.deleteConversation(
+        request.params.id,
+        userId
+      );
+
+      if (!result) {
+        return response.status(404).json({
+          error: 'conversation_not_found',
+          category: 'validation',
+          message: 'Conversation not found.'
+        });
+      }
+
+      return response.status(204).send();
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_delete_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_delete_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
   router.get('/conversations/:id/messages', async (request, response) => {
     try {
       const userId = authenticate(request, response);

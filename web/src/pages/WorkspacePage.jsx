@@ -151,6 +151,8 @@ export function WorkspacePage() {
           isLoading={chat.conversationsLoading}
           onSelect={chat.selectConversation}
           onNew={chat.resetConversation}
+          onRename={chat.renameConversation}
+          onDelete={chat.deleteConversation}
         />
 
         <div className="flex flex-1 flex-col">

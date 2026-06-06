@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-import { sendChatMessage, listConversations, getConversationMessages } from '../api/atlasApi.js';
+import { sendChatMessage, listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi } from '../api/atlasApi.js';
 
 function normalizeMessage(msg) {
   return {
@@ -128,6 +128,42 @@ export function useChat() {
     setError('');
   }
 
+  async function renameConversation(id, title) {
+    const previous = conversations;
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title } : c))
+    );
+
+    try {
+      await renameConversationApi(id, title);
+    } catch {
+      setConversations(previous);
+    }
+  }
+
+  async function deleteConversation(id) {
+    const wasActive = id === activeConversationId;
+    const previous = conversations;
+
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+
+    if (wasActive) {
+      setActiveConversationId('');
+      setMessages([]);
+    }
+
+    try {
+      await deleteConversationApi(id);
+    } catch {
+      setConversations(previous);
+
+      if (wasActive) {
+        setActiveConversationId(id);
+      }
+    }
+  }
+
   return {
     conversations,
     conversationsLoading,
@@ -143,6 +179,8 @@ export function useChat() {
     send,
     resetConversation,
     selectConversation,
+    renameConversation,
+    deleteConversation,
     fetchConversations,
     isLoading: status === 'loading',
   };
