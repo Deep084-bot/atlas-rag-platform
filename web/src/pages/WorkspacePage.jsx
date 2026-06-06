@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ChatTranscript } from '../components/ChatTranscript.jsx';
+import { SearchView } from '../components/SearchView.jsx';
 import { SourcesList } from '../components/SourcesList.jsx';
 import { Sidebar } from '../components/Sidebar.jsx';
 import { Navbar } from '../components/Navbar.jsx';
@@ -84,6 +85,7 @@ export function WorkspacePage() {
   const documents = useDocuments();
   const chat = useChat();
 
+  const [mode, setMode] = useState('chat');
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState('');
 
@@ -156,63 +158,92 @@ export function WorkspacePage() {
         />
 
         <div className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto">
-            {chat.messagesLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-sm text-slate-400">Loading messages&hellip;</p>
-              </div>
-            ) : chat.messagesError ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-sm text-rose-200">{chat.messagesError}</p>
-              </div>
-            ) : showEmptyState ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <p className="text-lg text-slate-300">Select a conversation or start a new chat.</p>
-                </div>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
-                {activeConversation && (
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-white">{activeConversation.title}</h2>
-                    <StatusPill status={chat.status}>{chat.status === 'idle' ? 'Ready' : chat.status}</StatusPill>
+          <div className="flex items-center gap-6 border-b border-white/10 px-6 py-2">
+            <button
+              type="button"
+              onClick={() => setMode('chat')}
+              className={`text-sm font-semibold transition ${
+                mode === 'chat' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('search')}
+              className={`text-sm font-semibold transition ${
+                mode === 'search' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Search
+            </button>
+          </div>
+
+          {mode === 'chat' ? (
+            <>
+              <div className="flex-1 overflow-y-auto">
+                {chat.messagesLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-sm text-slate-400">Loading messages&hellip;</p>
+                  </div>
+                ) : chat.messagesError ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-sm text-rose-200">{chat.messagesError}</p>
+                  </div>
+                ) : showEmptyState ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <p className="text-lg text-slate-300">Select a conversation or start a new chat.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
+                    {activeConversation && (
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-semibold text-white">{activeConversation.title}</h2>
+                        <StatusPill status={chat.status}>{chat.status === 'idle' ? 'Ready' : chat.status}</StatusPill>
+                      </div>
+                    )}
+
+                    {showMessages && <ChatTranscript messages={chat.messages} />}
                   </div>
                 )}
-
-                {showMessages && <ChatTranscript messages={chat.messages} />}
               </div>
-            )}
-          </div>
 
-          <div className="border-t border-white/10 bg-slate-950/30 px-6 py-4">
-            {chat.error && <p className="mb-3 text-sm text-rose-200">{chat.error}</p>}
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-200">Message</span>
-              <textarea
-                value={chat.message}
-                onChange={(event) => chat.setMessage(event.target.value)}
-                placeholder={
-                  chat.activeConversationId
-                    ? 'Ask a follow-up question'
-                    : 'Start a new conversation'
-                }
-                rows={3}
-                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
-              />
-            </label>
+              <div className="border-t border-white/10 bg-slate-950/30 px-6 py-4">
+                {chat.error && <p className="mb-3 text-sm text-rose-200">{chat.error}</p>}
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-200">Message</span>
+                  <textarea
+                    value={chat.message}
+                    onChange={(event) => chat.setMessage(event.target.value)}
+                    placeholder={
+                      chat.activeConversationId
+                        ? 'Ask a follow-up question'
+                        : 'Start a new conversation'
+                    }
+                    rows={3}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
+                  />
+                </label>
 
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => chat.send().catch(() => {})}
-                disabled={chat.isLoading}
-                className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {chat.isLoading ? 'Sending&hellip;' : 'Send'}
-              </button>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => chat.send().catch(() => {})}
+                    disabled={chat.isLoading}
+                    className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {chat.isLoading ? 'Sending&hellip;' : 'Send'}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <SearchView />
             </div>
-          </div>
+          )}
 
           <div className="border-t border-white/10 bg-slate-950/20">
             <CollapsibleSection title="Sources">
