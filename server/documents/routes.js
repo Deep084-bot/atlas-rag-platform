@@ -207,10 +207,7 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
       await storageProvider.deleteFile(deletedDocument.storage_path);
 
-      return response.json({
-        documentId: request.params.id,
-        status: 'deleted'
-      });
+      return response.status(204).end();
     } catch (error) {
       const classified = classifyError(error);
       return response.status(classified.statusCode).json({

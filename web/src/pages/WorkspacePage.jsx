@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ChatTranscript } from '../components/ChatTranscript.jsx';
+import { ConversationList } from '../components/ConversationList.jsx';
 import { SearchView } from '../components/SearchView.jsx';
 import { SourcesList } from '../components/SourcesList.jsx';
 import { Sidebar } from '../components/Sidebar.jsx';
@@ -55,6 +56,15 @@ function formatDocumentTimestamp(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
 
+function formatFileType(fileType) {
+  return (fileType ?? 'unknown').toUpperCase();
+}
+
+function formatUploadDate(timestamp) {
+  if (!timestamp) return '';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(timestamp));
+}
+
 function CollapsibleSection({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -88,6 +98,8 @@ export function WorkspacePage() {
   const [mode, setMode] = useState('chat');
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,12 +152,53 @@ export function WorkspacePage() {
     }
   }
 
+  function handleMobileSelectConversation(id) {
+    chat.selectConversation(id);
+    setMobileDrawerOpen(false);
+  }
+
+  function handleMobileNewConversation() {
+    chat.resetConversation();
+    setMobileDrawerOpen(false);
+  }
+
   const showEmptyState = !chat.activeConversationId && chat.messages.length === 0;
   const showMessages = chat.messages.length > 0;
 
   return (
     <main className="flex h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(72,215,200,0.16),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(124,199,255,0.14),_transparent_28%),linear-gradient(180deg,_#06111f_0%,_#091523_50%,_#050b13_100%)] text-slate-100">
       <Navbar />
+
+      {mobileDrawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setMobileDrawerOpen(false)}
+          />
+          <aside className="relative flex h-full w-72 flex-col border-r border-white/10 bg-slate-950 shadow-2xl">
+            <div className="border-b border-white/10 p-4">
+              <button
+                type="button"
+                onClick={handleMobileNewConversation}
+                className="w-full rounded-full bg-atlas-teal px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-atlas-teal/90"
+              >
+                + New conversation
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 pb-4 pt-3">
+              <ConversationList
+                conversations={chat.conversations}
+                activeConversationId={chat.activeConversationId}
+                isLoading={chat.conversationsLoading}
+                onSelect={handleMobileSelectConversation}
+                onRename={chat.renameConversation}
+                onDelete={chat.deleteConversation}
+              />
+            </div>
+          </aside>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           conversations={chat.conversations}
@@ -157,8 +210,8 @@ export function WorkspacePage() {
           onDelete={chat.deleteConversation}
         />
 
-        <div className="flex flex-1 flex-col">
-          <div className="flex items-center gap-6 border-b border-white/10 px-6 py-2">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-6 border-b border-white/10 px-4 py-2 lg:px-6">
             <button
               type="button"
               onClick={() => setMode('chat')}
@@ -184,7 +237,7 @@ export function WorkspacePage() {
               <div className="flex-1 overflow-y-auto">
                 {chat.messagesLoading ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-sm text-slate-400">Loading messages&hellip;</p>
+                    <p className="text-sm text-slate-400">Loading messages...</p>
                   </div>
                 ) : chat.messagesError ? (
                   <div className="flex items-center justify-center h-full">
@@ -234,7 +287,7 @@ export function WorkspacePage() {
                     disabled={chat.isLoading}
                     className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {chat.isLoading ? 'Sending&hellip;' : 'Send'}
+                    {chat.isLoading ? 'Sending...' : 'Send'}
                   </button>
                 </div>
               </div>
@@ -245,25 +298,35 @@ export function WorkspacePage() {
             </div>
           )}
 
-          <div className="border-t border-white/10 bg-slate-950/20">
+          <div className="border-t border-white/10 bg-slate-950/20 overflow-x-hidden">
             <CollapsibleSection title="Sources">
               <SourcesList sources={currentSources} emptyLabel="No citations returned yet." />
             </CollapsibleSection>
 
             <CollapsibleSection title="Status">
-              <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-5 text-sm text-slate-300 shadow-glow backdrop-blur-xl">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="uppercase tracking-[0.24em] text-slate-500">Status</span>
-                  <span className="font-mono text-xs text-slate-400">{health?.service ?? 'atlas-api'}</span>
+              <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Database</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    Connected
+                  </span>
                 </div>
-                <p className="mt-3 leading-6">
-                  {health?.status ?? healthError ?? 'Waiting for a backend response.'}
-                </p>
-                {health?.timestamp && (
-                  <p className="mt-3 font-mono text-xs text-slate-500">
-                    {new Date(health.timestamp).toLocaleString()}
-                  </p>
-                )}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Embedding Provider</span>
+                  <span className={`flex items-center gap-1.5 ${health && health.status ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    <span className={`h-2 w-2 rounded-full ${health && health.status ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                    {health && health.status ? 'Connected' : healthError ?? 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Documents Indexed</span>
+                  <span className="text-slate-200">{documents.documents.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Conversation Count</span>
+                  <span className="text-slate-200">{chat.conversations.length}</span>
+                </div>
               </div>
             </CollapsibleSection>
 
@@ -286,7 +349,7 @@ export function WorkspacePage() {
                     disabled={upload.isLoading || documents.isLoading}
                     className="rounded-full bg-atlas-teal px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-teal/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {upload.isLoading ? 'Uploading&hellip;' : 'Upload'}
+                    {upload.isLoading ? 'Uploading...;' : 'Upload'}
                   </button>
                   <StatusPill status={upload.status}>{upload.status === 'idle' ? 'Ready' : upload.status}</StatusPill>
                   {upload.file && <span className="text-sm text-slate-300">Selected file: {upload.file.name}</span>}
@@ -310,19 +373,53 @@ export function WorkspacePage() {
                 {documents.error && <p className="text-sm text-rose-200">{documents.error}</p>}
 
                 <div className="space-y-3">
-                  {documents.documents.length > 0 ? (
+                  {                    documents.documents.length > 0 ? (
                     documents.documents.map((document) => {
                       const visibleStatus = getDocumentStatusLabel(document.status);
                       const statusTone = getDocumentStatusTone(document.status);
+                      const isPendingDelete = pendingDeleteId === document.id;
 
                       return (
                         <article key={document.id} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <h3 className="text-sm font-semibold text-white">{document.fileName}</h3>
-                              <p className="mt-1 text-xs text-slate-400">Created {formatDocumentTimestamp(document.createdAt)}</p>
+                              <p className="mt-1 text-xs text-slate-400">{formatFileType(document.fileType)} • {visibleStatus}</p>
+                              <p className="text-xs text-slate-500">Uploaded {formatUploadDate(document.createdAt)}</p>
                             </div>
-                            <StatusPill status={statusTone}>{visibleStatus}</StatusPill>
+                            <div className="flex items-center gap-2">
+                              <StatusPill status={statusTone}>{visibleStatus}</StatusPill>
+                              {isPendingDelete ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-400">Delete {document.fileName}?</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      documents.removeDocument(document.id).catch(() => {});
+                                      setPendingDeleteId(null);
+                                    }}
+                                    className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/30"
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingDeleteId(null)}
+                                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDeleteId(document.id)}
+                                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-400 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           <div className="mt-4 space-y-2">
@@ -349,7 +446,12 @@ export function WorkspacePage() {
                       );
                     })
                   ) : (
-                    <p className="text-sm text-slate-400">No documents uploaded yet.</p>
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <p className="text-sm text-slate-400">No documents uploaded yet.</p>
+                        <p className="mt-1 text-xs text-slate-500">Upload a PDF to start building your knowledge base.</p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

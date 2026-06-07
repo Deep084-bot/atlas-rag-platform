@@ -2,11 +2,18 @@ import { ConversationItem } from './ConversationItem.jsx';
 
 export function ConversationList({ conversations, activeConversationId, isLoading, onSelect, onRename, onDelete }) {
   if (isLoading) {
-    return <p className="px-3 text-sm text-slate-400">Loading conversations&hellip;</p>;
+    return <p className="px-3 text-sm text-slate-400">Loading conversations...;</p>;
   }
 
   if (!conversations.length) {
-    return <p className="px-3 text-sm text-slate-400">No conversations yet. Start a new chat.</p>;
+    return (
+      <div className="flex items-center justify-center h-full px-3">
+        <div className="text-center">
+          <p className="text-sm text-slate-400">No conversations yet.</p>
+          <p className="mt-1 text-xs text-slate-500">Click New Conversation to start chatting with your documents.</p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -19,7 +19,7 @@ export function Navbar() {
   const isWorkspace = location.pathname === '/app';
 
   return (
-    <nav className="flex items-center justify-between border-b border-white/10 px-6 py-4 lg:px-10">
+    <nav className="flex items-center justify-between border-b border-white/10 px-4 py-4 sm:px-6 lg:px-10">
       <Link to="/" className="text-xs font-semibold uppercase tracking-[0.3em] text-atlas-sky/80">
         Atlas
       </Link>

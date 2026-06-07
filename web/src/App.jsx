@@ -6,14 +6,15 @@ import { LoginPage } from './pages/LoginPage.jsx';
 import { SignupPage } from './pages/SignupPage.jsx';
 import { WorkspacePage } from './pages/WorkspacePage.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
+import { GuestRoute } from './components/GuestRoute.jsx';
 
 export default function App() {
   return (
     <>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+        <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
         <Route
           path="/app"
           element={

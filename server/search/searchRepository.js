@@ -15,12 +15,15 @@ export class SearchRepository {
     const result = await this.pool.query(
       `
         SELECT
-          id,
-          document_id,
-          chunk_index,
-          content,
-          1 - (embedding <=> $1::vector) AS similarity
+          chunks.id,
+          chunks.document_id,
+          documents.file_name,
+          chunks.chunk_index,
+          chunks.content,
+          1 - (chunks.embedding <=> $1::vector) AS similarity
         FROM chunks
+        INNER JOIN documents
+          ON documents.id = chunks.document_id
         WHERE embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector ASC, created_at ASC
         LIMIT $2
@@ -31,6 +34,7 @@ export class SearchRepository {
     return result.rows.map((row) => ({
       chunkId: row.id,
       documentId: row.document_id,
+      fileName: row.file_name,
       chunkIndex: Number(row.chunk_index),
       similarity: Number(row.similarity),
       chunkText: row.content
@@ -45,11 +49,12 @@ export class SearchRepository {
     const result = await this.pool.query(
       `
         SELECT
-          chunks.id,
-          chunks.document_id,
-          chunks.chunk_index,
-          chunks.content,
-          1 - (chunks.embedding <=> $2::vector) AS similarity
+        chunks.id,
+        chunks.document_id,
+        documents.file_name,
+        chunks.chunk_index,
+        chunks.content,
+        1 - (chunks.embedding <=> $2::vector) AS similarity
         FROM chunks
         INNER JOIN documents ON documents.id = chunks.document_id
         WHERE chunks.embedding IS NOT NULL
@@ -63,6 +68,7 @@ export class SearchRepository {
     return result.rows.map((row) => ({
       chunkId: row.id,
       documentId: row.document_id,
+      fileName: row.file_name,
       chunkIndex: Number(row.chunk_index),
       similarity: Number(row.similarity),
       chunkText: row.content

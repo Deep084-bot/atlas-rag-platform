@@ -32,7 +32,7 @@ export function SearchView() {
             disabled={search.isLoading}
             className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {search.isLoading ? 'Searching&hellip;' : 'Search'}
+            {search.isLoading ? 'Searching...;' : 'Search'}
           </button>
           <span
             className={`rounded-full border px-3 py-1 text-xs font-semibold ${
@@ -52,9 +52,30 @@ export function SearchView() {
         {search.error && <p className="text-sm text-rose-200">{search.error}</p>}
       </div>
 
-      <div>
-        <SourcesList sources={search.matches} emptyLabel="No results yet. Enter a query and click Search." />
-      </div>
+      {search.status === 'idle' && search.query === '' ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center">
+            <p className="text-sm text-slate-400">Search your uploaded documents</p>
+            <p className="mt-1 text-xs text-slate-500">Ask questions across your knowledge base and find relevant chunks instantly.</p>
+          </div>
+        </div>
+      ) : search.status === 'success' && search.matches.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center">
+            <p className="text-sm text-slate-400">No results found.</p>
+            <p className="mt-1 text-xs text-slate-500">Try a different search phrase.</p>
+          </div>
+        </div>
+      ) : (
+        <div>
+          {search.status === 'success' && search.matches.length > 0 && (
+            <p className="mb-4 text-sm text-slate-400">
+              {search.matches.length} result{search.matches.length === 1 ? '' : 's'} found
+            </p>
+          )}
+          <SourcesList sources={search.matches} emptyLabel="No results yet. Enter a query and click Search." />
+        </div>
+      )}
     </div>
   );
 }

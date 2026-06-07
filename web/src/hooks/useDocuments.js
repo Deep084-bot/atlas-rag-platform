@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { listDocuments } from '../api/atlasApi.js';
+import { deleteDocument, listDocuments } from '../api/atlasApi.js';
 
 const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'chunking', 'embedding']);
 
@@ -45,6 +45,18 @@ export function useDocuments() {
     return () => clearInterval(timer);
   }, [documents]);
 
+  async function removeDocument(documentId) {
+    const previous = documents;
+    setDocuments((current) => current.filter((d) => d.id !== documentId));
+
+    try {
+      await deleteDocument(documentId);
+    } catch (err) {
+      setDocuments(previous);
+      throw err;
+    }
+  }
+
   return {
     documents,
     setDocuments,
@@ -54,6 +66,7 @@ export function useDocuments() {
     refresh: () => {
       setRefreshNonce((value) => value + 1);
     },
-    isLoading: status === 'loading'
+    isLoading: status === 'loading',
+    removeDocument
   };
 }

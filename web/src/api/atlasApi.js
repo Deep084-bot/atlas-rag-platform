@@ -26,6 +26,12 @@ export async function getDocumentStatus(documentId) {
   return requestJson(`/api/documents/${encodeURIComponent(documentId)}/status`);
 }
 
+export async function deleteDocument(documentId) {
+  return requestJson(`/api/documents/${encodeURIComponent(documentId)}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function chunkDocument(documentId) {
   return requestJson(`/api/documents/${encodeURIComponent(documentId)}/chunk`, {
     method: 'POST'

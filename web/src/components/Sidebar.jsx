@@ -2,7 +2,7 @@ import { ConversationList } from './ConversationList.jsx';
 
 export function Sidebar({ conversations, activeConversationId, isLoading, onSelect, onNew, onRename, onDelete }) {
   return (
-    <aside className="flex w-72 flex-col border-r border-white/10 bg-slate-950/30">
+    <aside className="hidden w-72 flex-col border-r border-white/10 bg-slate-950/30 lg:flex">
       <div className="border-b border-white/10 p-4">
         <button
           type="button"
