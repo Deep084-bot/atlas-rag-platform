@@ -214,6 +214,16 @@ export function WorkspacePage() {
           <div className="flex items-center gap-6 border-b border-white/10 px-4 py-2 lg:px-6">
             <button
               type="button"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="lg:hidden text-slate-400 hover:text-white transition"
+              aria-label="Open conversations"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button
+              type="button"
               onClick={() => setMode('chat')}
               className={`text-sm font-semibold transition ${
                 mode === 'chat' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
