@@ -40,6 +40,7 @@ export function useUpload() {
     setFile,
     status,
     error,
+    setError,
     uploadedDocument,
     upload,
     reset,

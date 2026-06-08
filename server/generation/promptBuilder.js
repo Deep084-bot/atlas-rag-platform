@@ -23,6 +23,12 @@ function formatRetrievedContext(retrievedContext) {
     .join('\n\n');
 }
 
+const FALLBACK_SYSTEM_INSTRUCTIONS = [
+  'You are Atlas.',
+  "The user's uploaded documents do not contain relevant information for this question.",
+  'Answer using your general knowledge.'
+].join(' ');
+
 export function buildGenerationPrompt({ question, retrievedContext }) {
   const contextBlock = formatRetrievedContext(retrievedContext);
 
@@ -43,4 +49,27 @@ export function buildGenerationPrompt({ question, retrievedContext }) {
       }
     ]
   };
+}
+
+export function buildFallbackPrompt({ question }) {
+  return {
+    messages: [
+      { role: 'system', content: FALLBACK_SYSTEM_INSTRUCTIONS },
+      { role: 'user', content: `Question:\n${question}` }
+    ]
+  };
+}
+
+export function buildFallbackChatPrompt({ question, history }) {
+  const messages = [
+    { role: 'system', content: FALLBACK_SYSTEM_INSTRUCTIONS }
+  ];
+
+  for (const message of history) {
+    messages.push({ role: message.role, content: message.content });
+  }
+
+  messages.push({ role: 'user', content: question });
+
+  return { messages };
 }

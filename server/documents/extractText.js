@@ -25,17 +25,27 @@ export async function extractTextFromUpload({ buffer, mimeType, originalName }) 
 
   if (fileType === 'pdf') {
     const parsed = await pdfParse(buffer);
-    return {
-      fileType,
-      extractedText: normalizeText(parsed.text)
-    };
+    const extractedText = normalizeText(parsed.text);
+
+    if (extractedText.length === 0) {
+      throw new UploadValidationError(
+        'This PDF contains no extractable text. Scanned PDFs are not supported yet.'
+      );
+    }
+
+    return { fileType, extractedText };
   }
 
   if (fileType === 'txt') {
-    return {
-      fileType,
-      extractedText: normalizeText(buffer.toString('utf8'))
-    };
+    const extractedText = normalizeText(buffer.toString('utf8'));
+
+    if (extractedText.length === 0) {
+      throw new UploadValidationError(
+        'This text file contains no readable content.'
+      );
+    }
+
+    return { fileType, extractedText };
   }
 
   throw new UploadValidationError('Unsupported file type. Only PDF and TXT files are allowed.');

@@ -1,4 +1,15 @@
 import { ValidationError } from '../errors.js';
+import { buildFallbackPrompt } from './promptBuilder.js';
+
+function computeOverlap(question, chunks) {
+  const normalizedQuestion = question.toLowerCase().replace(/[^\w\s]/g, ' ');
+  const contextText = chunks
+    .map((c) => [c.fileName, c.chunkText].join(' '))
+    .join(' ')
+    .toLowerCase();
+  const questionTerms = normalizedQuestion.split(/\s+/).filter((w) => w.length >= 4);
+  return questionTerms.filter((word) => contextText.includes(word)).length;
+}
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -33,13 +44,6 @@ export function createGenerationService({
   async function generateFromPrompt({ prompt, sources = [], temperature: overrideTemperature, maxTokens: overrideMaxTokens } = {}) {
     if (!prompt || !Array.isArray(prompt.messages) || prompt.messages.length === 0) {
       throw new Error('prompt is required.');
-    }
-
-    if (!Array.isArray(sources) || sources.length === 0) {
-      return {
-        answer: 'insufficient context',
-        sources: []
-      };
     }
 
     const generation = await generationProvider.generate({
@@ -86,11 +90,28 @@ export function createGenerationService({
       });
 
       const sources = retrieval.retrievedContext ?? [];
-      const prompt = buildPrompt({
-        question: retrieval.query,
-        retrievedContext: sources
+      const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
+      const overlapCount = sources.length > 0 ? computeOverlap(retrieval.query, sources) : 0;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+
+      console.log('[atlas]', {
+        query: retrieval.query,
+        topSimilarity,
+        overlapCount,
+        retrievedChunks: sources.length,
+        mode: shouldUseRag ? 'rag' : 'fallback'
       });
-      return generateFromPrompt({ prompt, sources });
+
+      if (shouldUseRag) {
+        const prompt = buildPrompt({
+          question: retrieval.query,
+          retrievedContext: sources
+        });
+        return generateFromPrompt({ prompt, sources });
+      }
+
+      const prompt = buildFallbackPrompt({ question: retrieval.query });
+      return generateFromPrompt({ prompt, sources: [] });
     },
 
     async generateFromPrompt({ prompt, sources = [], temperature: overrideTemperature, maxTokens: overrideMaxTokens } = {}) {

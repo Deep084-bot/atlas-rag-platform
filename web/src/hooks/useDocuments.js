@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { deleteDocument, listDocuments } from '../api/atlasApi.js';
+import { deleteDocument, listDocuments, renameDocument as renameDocumentApi } from '../api/atlasApi.js';
 
 const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'chunking', 'embedding']);
 
@@ -57,6 +57,20 @@ export function useDocuments() {
     }
   }
 
+  async function renameDocument(documentId, fileName) {
+    const previous = documents;
+    setDocuments((current) =>
+      current.map((d) => (d.id === documentId ? { ...d, fileName } : d))
+    );
+
+    try {
+      await renameDocumentApi(documentId, fileName);
+    } catch (err) {
+      setDocuments(previous);
+      throw err;
+    }
+  }
+
   return {
     documents,
     setDocuments,
@@ -67,6 +81,7 @@ export function useDocuments() {
       setRefreshNonce((value) => value + 1);
     },
     isLoading: status === 'loading',
-    removeDocument
+    removeDocument,
+    renameDocument
   };
 }

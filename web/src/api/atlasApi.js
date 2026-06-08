@@ -32,6 +32,13 @@ export async function deleteDocument(documentId) {
   });
 }
 
+export async function renameDocument(id, fileName) {
+  return requestJson(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { fileName }
+  });
+}
+
 export async function chunkDocument(documentId) {
   return requestJson(`/api/documents/${encodeURIComponent(documentId)}/chunk`, {
     method: 'POST'

@@ -249,4 +249,24 @@ export class DocumentsRepository {
 
     return result.rows[0] ?? null;
   }
+
+  async renameDocument(id, userId, fileName) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        UPDATE documents
+        SET file_name = $3,
+            updated_at = now()
+        WHERE id = $1
+          AND user_id = $2
+        RETURNING id, file_name, file_type, file_size_bytes, storage_path, source_type, status, progress, failure_reason, processing_started_at, ready_at, failed_at, created_at, updated_at
+      `,
+      [id, userId, fileName]
+    );
+
+    return this.toDocumentSummary(result.rows[0] ?? null);
+  }
 }

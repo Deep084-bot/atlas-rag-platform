@@ -189,6 +189,52 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
     });
   });
 
+  router.patch('/:id', async (request, response) => {
+    try {
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const raw = typeof request.body?.fileName === 'string' ? request.body.fileName : '';
+      const fileName = raw.trim();
+
+      if (!fileName) {
+        return response.status(400).json({
+          error: 'rename_validation_failed',
+          category: 'validation',
+          message: 'File name is required.'
+        });
+      }
+
+      if (fileName.length > 255) {
+        return response.status(400).json({
+          error: 'rename_validation_failed',
+          category: 'validation',
+          message: 'File name must be at most 255 characters.'
+        });
+      }
+
+      const updated = await documentsRepository.renameDocument(request.params.id, userId, fileName);
+
+      if (!updated) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
+      return response.json({ document: updated });
+    } catch (error) {
+      const classified = classifyError(error);
+      return response.status(classified.statusCode).json({
+        error: 'document_rename_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
   router.delete('/:id', async (request, response) => {
     try {
       const userId = requireAuthenticatedUser(request, response);

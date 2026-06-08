@@ -1,4 +1,15 @@
 import { ValidationError } from '../errors.js';
+import { buildFallbackChatPrompt } from '../generation/promptBuilder.js';
+
+function computeOverlap(question, chunks) {
+  const normalizedQuestion = question.toLowerCase().replace(/[^\w\s]/g, ' ');
+  const contextText = chunks
+    .map((c) => [c.fileName, c.chunkText].join(' '))
+    .join(' ')
+    .toLowerCase();
+  const questionTerms = normalizedQuestion.split(/\s+/).filter((w) => w.length >= 4);
+  return questionTerms.filter((word) => contextText.includes(word)).length;
+}
 
 const UNTITLED_THREAD = 'Untitled thread';
 
@@ -132,22 +143,46 @@ export function createChatService({
       });
 
       const sources = retrieval.retrievedContext ?? [];
-      const prompt = buildChatPrompt({
-        question: normalizedMessage,
-        history,
-        retrievedContext: sources
+      const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
+      const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+
+      console.log('[atlas]', {
+        query: normalizedMessage,
+        topSimilarity,
+        overlapCount,
+        retrievedChunks: sources.length,
+        mode: shouldUseRag ? 'rag' : 'fallback'
       });
+
+      let prompt;
+      let activeSources;
+
+      if (shouldUseRag) {
+        prompt = buildChatPrompt({
+          question: normalizedMessage,
+          history,
+          retrievedContext: sources
+        });
+        activeSources = sources;
+      } else {
+        prompt = buildFallbackChatPrompt({
+          question: normalizedMessage,
+          history
+        });
+        activeSources = [];
+      }
 
       const generation = await generationService.generateFromPrompt({
         prompt,
-        sources
+        sources: activeSources
       });
 
       await conversationRepository.appendConversationTurn({
         conversationId: conversation.id,
         userMessage: normalizedMessage,
         assistantMessage: generation.answer,
-        assistantSources: sources,
+        assistantSources: activeSources,
         userId: normalizedUserId
       });
 
@@ -159,7 +194,7 @@ export function createChatService({
       return {
         conversationId: conversation.id,
         answer: generation.answer,
-        sources
+        sources: activeSources
       };
     },
 

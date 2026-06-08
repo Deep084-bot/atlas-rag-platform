@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChatTranscript } from '../components/ChatTranscript.jsx';
 import { ConversationList } from '../components/ConversationList.jsx';
@@ -100,6 +100,9 @@ export function WorkspacePage() {
   const [healthError, setHealthError] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [documentSearch, setDocumentSearch] = useState('');
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -138,17 +141,69 @@ export function WorkspacePage() {
     return chat.conversations.find((c) => c.id === chat.activeConversationId) ?? null;
   }, [chat.activeConversationId, chat.conversations]);
 
+  const filteredDocuments = useMemo(() => {
+    return documents.documents.filter((d) =>
+      d.fileName.toLowerCase().includes(documentSearch.toLowerCase())
+    );
+  }, [documents.documents, documentSearch]);
+
   function handleUploadFileChange(event) {
     const nextFile = event.target.files?.[0] ?? null;
     upload.setFile(nextFile);
   }
 
   async function handleUpload() {
+    const file = upload.file;
+
+    if (!file) {
+      upload.setError('Please select a file.');
+      return;
+    }
+
+    if (file.size === 0) {
+      upload.setError('Empty files cannot be uploaded.');
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      upload.setError('File exceeds the 25 MB upload limit.');
+      return;
+    }
+
     try {
       await upload.upload();
       await documents.reload();
     } catch {
       // handled in hook state
+    }
+  }
+
+  function handleStartRename(document) {
+    setRenamingId(document.id);
+    setRenameValue(document.fileName);
+  }
+
+  function handleCancelRename() {
+    setRenamingId(null);
+    setRenameValue('');
+  }
+
+  function handleSaveRename() {
+    const trimmed = renameValue.trim();
+
+    if (trimmed && renamingId) {
+      documents.renameDocument(renamingId, trimmed).catch(() => {});
+    }
+
+    setRenamingId(null);
+    setRenameValue('');
+  }
+
+  function handleRenameKeyDown(event) {
+    if (event.key === 'Enter') {
+      handleSaveRename();
+    } else if (event.key === 'Escape') {
+      handleCancelRename();
     }
   }
 
@@ -382,9 +437,18 @@ export function WorkspacePage() {
 
                 {documents.error && <p className="text-sm text-rose-200">{documents.error}</p>}
 
+                <input
+                  type="text"
+                  value={documentSearch}
+                  onChange={(e) => setDocumentSearch(e.target.value)}
+                  placeholder="Search documents..."
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
+                />
+
                 <div className="space-y-3">
-                  {                    documents.documents.length > 0 ? (
-                    documents.documents.map((document) => {
+                  {documents.documents.length > 0 ? (
+                    filteredDocuments.length > 0 ? (
+                    filteredDocuments.map((document) => {
                       const visibleStatus = getDocumentStatusLabel(document.status);
                       const statusTone = getDocumentStatusTone(document.status);
                       const isPendingDelete = pendingDeleteId === document.id;
@@ -393,13 +457,25 @@ export function WorkspacePage() {
                         <article key={document.id} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <h3 className="text-sm font-semibold text-white">{document.fileName}</h3>
+                              {renamingId === document.id ? (
+                                <input
+                                  type="text"
+                                  value={renameValue}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onBlur={handleSaveRename}
+                                  onKeyDown={handleRenameKeyDown}
+                                  autoFocus
+                                  className="w-full rounded-xl border border-atlas-teal/30 bg-slate-900 px-3 py-2 text-sm text-white outline-none"
+                                />
+                              ) : (
+                                <h3 className="text-sm font-semibold text-white">{document.fileName}</h3>
+                              )}
                               <p className="mt-1 text-xs text-slate-400">{formatFileType(document.fileType)} • {visibleStatus}</p>
                               <p className="text-xs text-slate-500">Uploaded {formatUploadDate(document.createdAt)}</p>
                             </div>
                             <div className="flex items-center gap-2">
                               <StatusPill status={statusTone}>{visibleStatus}</StatusPill>
-                              {isPendingDelete ? (
+                              {renamingId === document.id ? null : isPendingDelete ? (
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-slate-400">Delete {document.fileName}?</span>
                                   <button
@@ -421,13 +497,22 @@ export function WorkspacePage() {
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDeleteId(document.id)}
-                                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-400 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300"
-                                >
-                                  Delete
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartRename(document)}
+                                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+                                  >
+                                    Rename
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingDeleteId(document.id)}
+                                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-400 transition hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -458,11 +543,18 @@ export function WorkspacePage() {
                   ) : (
                     <div className="flex items-center justify-center py-12">
                       <div className="text-center">
-                        <p className="text-sm text-slate-400">No documents uploaded yet.</p>
-                        <p className="mt-1 text-xs text-slate-500">Upload a PDF to start building your knowledge base.</p>
+                        <p className="text-sm text-slate-400">No matching documents found.</p>
                       </div>
                     </div>
-                  )}
+                  )
+                ) : (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <p className="text-sm text-slate-400">No documents uploaded yet.</p>
+                      <p className="mt-1 text-xs text-slate-500">Upload a PDF to start building your knowledge base.</p>
+                    </div>
+                  </div>
+                )}
                 </div>
               </div>
             </CollapsibleSection>
