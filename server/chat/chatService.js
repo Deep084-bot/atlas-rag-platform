@@ -178,17 +178,17 @@ export function createChatService({
         sources: activeSources
       });
 
-      await conversationRepository.appendConversationTurn({
+      await conversationRepository.appendConversationTurnForUser({
         conversationId: conversation.id,
+        userId: normalizedUserId,
         userMessage: normalizedMessage,
         assistantMessage: generation.answer,
         assistantSources: activeSources,
-        userId: normalizedUserId
       });
 
       if (conversation.title === UNTITLED_THREAD) {
         const title = generateTitle(normalizedMessage);
-        await conversationRepository.updateConversationTitle(conversation.id, title);
+        await conversationRepository.updateConversationTitleForUser(conversation.id, title, normalizedUserId);
       }
 
       return {
@@ -227,7 +227,7 @@ export function createChatService({
         return null;
       }
 
-      return await conversationRepository.updateConversationTitle(normalizedConversationId, normalizedTitle);
+      return await conversationRepository.updateConversationTitleForUser(normalizedConversationId, normalizedTitle, normalizedUserId);
     },
 
     async deleteConversation(conversationId, userId) {
@@ -249,7 +249,7 @@ export function createChatService({
         return null;
       }
 
-      return await conversationRepository.deleteConversation(normalizedConversationId);
+      return await conversationRepository.deleteConversationForUser(normalizedConversationId, normalizedUserId);
     },
 
     async listConversations(userId) {

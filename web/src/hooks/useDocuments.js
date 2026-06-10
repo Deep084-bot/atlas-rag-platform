@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { deleteDocument, listDocuments, renameDocument as renameDocumentApi } from '../api/atlasApi.js';
 
 const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'chunking', 'embedding']);
+const POLLING_TIMEOUT_MS = 600_000;
 
 export function useDocuments() {
   const [documents, setDocuments] = useState([]);
@@ -27,6 +28,8 @@ export function useDocuments() {
     }
   }
 
+  const pollStartRef = useRef(null);
+
   useEffect(() => {
     void loadDocuments().catch(() => {});
   }, [refreshNonce]);
@@ -35,10 +38,20 @@ export function useDocuments() {
     const shouldPoll = documents.some((document) => POLLING_STATUSES.has(document.status));
 
     if (!shouldPoll) {
+      pollStartRef.current = null;
       return undefined;
     }
 
+    if (pollStartRef.current === null) {
+      pollStartRef.current = Date.now();
+    }
+
     const timer = setInterval(() => {
+      if (Date.now() - pollStartRef.current >= POLLING_TIMEOUT_MS) {
+        clearInterval(timer);
+        return;
+      }
+
       void loadDocuments().catch(() => {});
     }, 2000);
 

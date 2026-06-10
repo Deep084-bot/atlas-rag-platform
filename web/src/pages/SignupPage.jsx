@@ -27,7 +27,7 @@ export function SignupPage() {
     const result = await auth.signup({ email, password });
     if (result.ok) {
       toast.success('Account created successfully');
-      navigate('/login');
+      navigate('/app');
     } else {
       const message = result.error?.message ?? result.error?.statusText ?? 'Signup failed';
       setError(message);
@@ -60,6 +60,7 @@ export function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
                 className="mt-1 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
               />
             </label>

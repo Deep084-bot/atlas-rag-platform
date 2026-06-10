@@ -151,6 +151,29 @@ export class ConversationRepository {
     return this.toConversation(result.rows[0]);
   }
 
+  async updateConversationTitleForUser(conversationId, title, userId) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        UPDATE chat_threads
+        SET title = $1
+        WHERE id = $2
+          AND user_id = $3
+        RETURNING id, user_id, title, created_at, updated_at
+      `,
+      [title, conversationId, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return null;
+    }
+
+    return this.toConversation(result.rows[0]);
+  }
+
   async deleteConversation(conversationId) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
@@ -159,6 +182,19 @@ export class ConversationRepository {
     const result = await this.pool.query(
       `DELETE FROM chat_threads WHERE id = $1 RETURNING id`,
       [conversationId]
+    );
+
+    return result.rowCount > 0;
+  }
+
+  async deleteConversationForUser(conversationId, userId) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `DELETE FROM chat_threads WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [conversationId, userId]
     );
 
     return result.rowCount > 0;
