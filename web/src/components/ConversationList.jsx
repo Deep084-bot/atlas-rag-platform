@@ -2,7 +2,7 @@ import { ConversationItem } from './ConversationItem.jsx';
 
 export function ConversationList({ conversations, activeConversationId, isLoading, onSelect, onRename, onDelete }) {
   if (isLoading) {
-    return <p className="px-3 text-sm text-slate-400">Loading conversations...;</p>;
+    return <p className="px-3 text-sm text-slate-400">Loading conversations...</p>;
   }
 
   if (!conversations.length) {

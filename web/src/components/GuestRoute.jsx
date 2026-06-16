@@ -8,7 +8,7 @@ export function GuestRoute({ children }) {
   if (auth.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#06111f] text-slate-100">
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-slate-400">Loading...</p>
       </main>
     );
   }

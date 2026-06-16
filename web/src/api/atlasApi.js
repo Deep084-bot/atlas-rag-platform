@@ -75,6 +75,114 @@ export async function sendChatMessage({ conversationId, message }) {
   });
 }
 
+export function sendChatMessageStream({ conversationId, message, signal, onMeta, onSources, onToken, onDone, onError }) {
+  return new Promise((resolve, reject) => {
+    let cancelled = false;
+
+    if (signal) {
+      if (signal.aborted) {
+        cancelled = true;
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+        return;
+      }
+
+      const onAbort = () => {
+        cancelled = true;
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+      };
+
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: conversationId || undefined,
+        message
+      }),
+      signal,
+      credentials: 'include'
+    }).then(async (response) => {
+      if (!response.ok) {
+        let errorMessage = 'Stream request failed.';
+
+        try {
+          const errorBody = await response.json();
+          errorMessage = errorBody?.message ?? errorMessage;
+        } catch {
+          // ignore parse error
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        if (cancelled) {
+          reader.cancel().catch(() => {});
+          return;
+        }
+
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+
+            let event;
+
+            try {
+              event = JSON.parse(line.slice(6));
+            } catch {
+              continue;
+            }
+
+            switch (event.type) {
+              case 'meta':
+                onMeta?.(event);
+                break;
+              case 'sources':
+                onSources?.(event);
+                break;
+              case 'token':
+                onToken?.(event);
+                break;
+              case 'done':
+                onDone?.(event);
+                resolve();
+                return;
+              case 'error':
+                onError?.(event);
+                reject(new Error(event.message || 'Stream error'));
+                return;
+              case 'ping':
+                break;
+              default:
+                break;
+            }
+          }
+        }
+      }
+
+      reject(new Error('Stream ended without done event.'));
+    }).catch((error) => {
+      if (cancelled) return;
+      onError?.({ message: error.message });
+      reject(error);
+    });
+  });
+}
+
 export async function listConversations() {
   return requestJson('/api/chat/conversations');
 }

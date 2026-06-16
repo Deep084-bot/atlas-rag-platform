@@ -46,13 +46,31 @@ function MarkdownContent({ content }) {
   );
 }
 
-function AssistantMessage({ message }) {
+function StreamingIndicator() {
+  return (
+    <span className="mt-3 inline-flex items-center gap-1">
+      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:0ms]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:150ms]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:300ms]" />
+    </span>
+  );
+}
+
+function AssistantMessage({ message, isStreaming }) {
   const [showSources, setShowSources] = useState(false);
   const hasSources = Array.isArray(message.sources) && message.sources.length > 0;
+  const showEmptyIndicator = isStreaming && !message.content;
 
   return (
     <>
-      <MarkdownContent content={message.content} />
+      {showEmptyIndicator ? (
+        <StreamingIndicator />
+      ) : (
+        <MarkdownContent content={message.content} />
+      )}
+      {isStreaming && !showEmptyIndicator && message.content && (
+        <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-atlas-teal align-text-bottom" />
+      )}
       {hasSources && (
         <div className="mt-3">
           <button
@@ -74,28 +92,34 @@ function AssistantMessage({ message }) {
   );
 }
 
-export function ChatTranscript({ messages = [] }) {
+export function ChatTranscript({ messages = [], isStreaming = false }) {
   if (!messages.length) {
     return <p className="text-sm text-slate-400">No messages yet. Send a question to start the conversation.</p>;
   }
 
+  const lastAssistantId = messages.reduceRight((found, m) => found || (m.role === 'assistant' ? m.id : null), null);
+
   return (
     <div className="space-y-4">
-      {messages.map((message) => (
-        <article
-          key={message.id}
-          className={`rounded-2xl border p-4 ${message.role === 'user' ? 'border-atlas-sky/20 bg-slate-900/70' : 'border-atlas-teal/20 bg-white/5'}`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{message.role}</p>
-          </div>
-          {message.role === 'assistant' ? (
-            <AssistantMessage message={message} />
-          ) : (
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-100">{message.content}</p>
-          )}
-        </article>
-      ))}
+      {messages.map((message) => {
+        const isLastAssistant = isStreaming && message.id === lastAssistantId;
+
+        return (
+          <article
+            key={message.id}
+            className={`rounded-2xl border p-4 ${message.role === 'user' ? 'border-atlas-sky/20 bg-slate-900/70' : 'border-atlas-teal/20 bg-white/5'}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{message.role}</p>
+            </div>
+            {message.role === 'assistant' ? (
+              <AssistantMessage message={message} isStreaming={isLastAssistant} />
+            ) : (
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-100">{message.content}</p>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }

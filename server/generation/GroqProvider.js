@@ -1,6 +1,7 @@
 import { GenerationProvider } from './GenerationProvider.js';
 import { ProviderError } from '../errors.js';
 import { fetchWithRetry } from '../http/fetchWithRetry.js';
+import { randomUUID } from 'node:crypto';
 
 export class GroqProvider extends GenerationProvider {
   constructor({ apiKey, model, baseUrl = 'https://api.groq.com/openai/v1' } = {}) {
@@ -76,5 +77,127 @@ export class GroqProvider extends GenerationProvider {
       finishReason: payload?.choices?.[0]?.finish_reason ?? null,
       rawResponse: payload
     };
+  }
+
+  async *generateStream({ messages, temperature = 0, maxTokens = 512, signal } = {}) {
+    console.log('[groq-stream] generateStream entered');
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new TypeError('GroqProvider.generateStream expects a non-empty messages array.');
+    }
+
+    if (typeof this.apiKey !== 'string' || this.apiKey.trim() === '') {
+      throw new ProviderError('GROQ_API_KEY is not configured.', {
+        provider: 'Groq',
+        statusCode: 500
+      });
+    }
+
+    if (typeof this.model !== 'string' || this.model.trim() === '') {
+      throw new ProviderError('GROQ_MODEL is not configured.', {
+        provider: 'Groq',
+        statusCode: 500
+      });
+    }
+
+    console.log('[groq-stream] calling groq');
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true
+      }),
+      signal
+    });
+
+    console.log('[groq-stream] response status', response.status);
+
+    if (!response.ok) {
+      let errorBody = '';
+
+      try {
+        errorBody = await response.text();
+      } catch {
+        errorBody = response.statusText;
+      }
+
+      throw new ProviderError(`Groq streaming request failed (${response.status}): ${errorBody}`, {
+        provider: 'Groq',
+        statusCode: 502,
+        retryable: response.status >= 500
+      });
+    }
+
+    if (!response.body) {
+      throw new ProviderError('Groq returned an empty response body for streaming.', {
+        provider: 'Groq',
+        statusCode: 502
+      });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          console.log('[groq-stream] reader done — stream closed by server');
+          break;
+        }
+
+        const rawChunk = decoder.decode(value, { stream: true });
+        const truncated = rawChunk.length > 500 ? rawChunk.slice(0, 500) + '...' : rawChunk;
+        console.log('[groq-stream] raw chunk:', JSON.stringify(truncated));
+
+        buffer += rawChunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) {
+            console.log('[groq-stream] skipping non-data line:', JSON.stringify(line));
+            continue;
+          }
+
+          const data = line.slice(6).trim();
+
+          if (data === '[DONE]') {
+            console.log('[groq-stream] received [DONE] — stream complete');
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed?.choices?.[0]?.delta?.content || '';
+
+            if (content) {
+              console.log('[groq-stream] parsed token:', JSON.stringify(content));
+              yield content;
+            } else {
+              console.log('[groq-stream] empty delta content in:', JSON.stringify(data));
+            }
+          } catch (parseError) {
+            console.log('[groq-stream] JSON parse failure for data:', JSON.stringify(data), 'error:', parseError.message);
+          }
+        }
+      }
+
+      console.log('[groq-stream] exiting reader loop — processing remaining buffer');
+      if (buffer.trim()) {
+        console.log('[groq-stream] unprocessed buffer:', JSON.stringify(buffer));
+      }
+    } finally {
+      console.log('[groq-stream] cancelling reader');
+      reader.cancel().catch(() => {});
+    }
   }
 }

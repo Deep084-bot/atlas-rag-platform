@@ -101,7 +101,9 @@ app.use(
 );
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const limiter = rateLimit({
+app.all('/api/auth/*', authHandler);
+
+const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
   standardHeaders: true,
@@ -113,9 +115,8 @@ const limiter = rateLimit({
   },
 });
 
-app.use(limiter);
+app.use('/api', apiLimiter);
 
-app.all('/api/auth/*', authHandler);
 app.use(express.json({ limit: '2mb' }));
 app.use(authMiddleware);
 
@@ -132,7 +133,7 @@ app.use(
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 app.use('/api/generate', createGenerationRouter({ generationService }));
-app.use('/api/chat', createChatRouter({ chatService }));
+app.use('/api/chat', createChatRouter({ chatService, conversationRepository }));
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({

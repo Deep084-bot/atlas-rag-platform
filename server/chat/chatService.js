@@ -198,6 +198,90 @@ export function createChatService({
       };
     },
 
+    async chatStream({ conversationId, message, userId, signal } = {}) {
+      const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+
+      if (!normalizedMessage) {
+        throw new ValidationError('message is required.');
+      }
+
+      const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+      if (!normalizedUserId) {
+        throw new ValidationError('userId is required.');
+      }
+
+      const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
+      let conversation = null;
+
+      if (normalizedConversationId) {
+        conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
+
+        if (!conversation) {
+          return null;
+        }
+      } else {
+        conversation = await conversationRepository.createConversation({ userId: normalizedUserId });
+      }
+
+      const history = normalizedConversationId
+        ? await conversationRepository.listRecentMessagesForUser(conversation.id, normalizedUserId, parsePositiveInteger(historyLimit, 6))
+        : [];
+
+      const retrieval = await retrievalService.retrieve(normalizedMessage, {
+        topK: parsePositiveInteger(retrievalTopK, 6),
+        similarityThreshold,
+        userId: normalizedUserId
+      });
+
+      const sources = retrieval.retrievedContext ?? [];
+      const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
+      const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+
+      console.log('[atlas]', {
+        query: normalizedMessage,
+        topSimilarity,
+        overlapCount,
+        retrievedChunks: sources.length,
+        mode: shouldUseRag ? 'rag' : 'fallback'
+      });
+
+      let prompt;
+      let activeSources;
+
+      if (shouldUseRag) {
+        prompt = buildChatPrompt({
+          question: normalizedMessage,
+          history,
+          retrievedContext: sources
+        });
+        activeSources = sources;
+      } else {
+        prompt = buildFallbackChatPrompt({
+          question: normalizedMessage,
+          history
+        });
+        activeSources = [];
+      }
+
+      console.log('[chat-service] creating stream');
+      const stream = generationService.generateStreamFromPrompt({
+        prompt,
+        sources: activeSources,
+        signal
+      });
+      console.log('[chat-service] stream created');
+
+      return {
+        conversationId: conversation.id,
+        sources: activeSources,
+        isNewConversation: conversation.title === UNTITLED_THREAD,
+        normalizedMessage,
+        stream
+      };
+    },
+
     async renameConversation(conversationId, userId, title) {
       const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
 

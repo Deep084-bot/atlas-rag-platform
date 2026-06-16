@@ -61,7 +61,7 @@ export function LoginPage() {
               disabled={auth.isLoading}
               className="w-full rounded-full bg-atlas-teal px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-teal/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {auth.isLoading ? 'Logging in…' : 'Log in'}
+              {auth.isLoading ? 'Logging in...' : 'Log in'}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-400">

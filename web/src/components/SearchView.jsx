@@ -32,7 +32,7 @@ export function SearchView() {
             disabled={search.isLoading}
             className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {search.isLoading ? 'Searching...;' : 'Search'}
+            {search.isLoading ? 'Searching...' : 'Search'}
           </button>
           <span
             className={`rounded-full border px-3 py-1 text-xs font-semibold ${

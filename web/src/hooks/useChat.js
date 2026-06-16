@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-import { sendChatMessage, listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi } from '../api/atlasApi.js';
+import { listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi, sendChatMessageStream } from '../api/atlasApi.js';
 
 function normalizeMessage(msg) {
   return {
@@ -26,9 +26,14 @@ export function useChat() {
   const [error, setError] = useState('');
 
   const activeRequestRef = useRef('');
+  const abortControllerRef = useRef(null);
+  const streamIdRef = useRef(0);
+  const lastAssistantIdRef = useRef(null);
 
-  const fetchConversations = useCallback(async () => {
-    setConversationsLoading(true);
+  const fetchConversations = useCallback(async (background = false) => {
+    if (!background) {
+      setConversationsLoading(true);
+    }
     setConversationsError('');
     try {
       const data = await listConversations();
@@ -36,7 +41,9 @@ export function useChat() {
     } catch (err) {
       setConversationsError(err instanceof Error ? err.message : 'Failed to load conversations');
     } finally {
-      setConversationsLoading(false);
+      if (!background) {
+        setConversationsLoading(false);
+      }
     }
   }, []);
 
@@ -73,6 +80,19 @@ export function useChat() {
       return null;
     }
 
+    const streamId = ++streamIdRef.current;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+
+      const orphanId = lastAssistantIdRef.current;
+      if (orphanId) {
+        setMessages((current) => current.filter((msg) => msg.id !== orphanId));
+      }
+      lastAssistantIdRef.current = null;
+    }
+
     setStatus('loading');
     setError('');
 
@@ -82,45 +102,108 @@ export function useChat() {
       content: trimmedMessage,
     };
 
-    setMessages((currentMessages) => [...currentMessages, userMessage]);
+    const assistantMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+      sources: [],
+    };
+
+    lastAssistantIdRef.current = assistantMessage.id;
+
+    setMessages((current) => [...current, userMessage, assistantMessage]);
     setMessage('');
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    let newConversationId = null;
+
     try {
-      const result = await sendChatMessage({
+      await sendChatMessageStream({
         conversationId: activeConversationId || undefined,
         message: trimmedMessage,
+        signal: abortController.signal,
+        onMeta: (event) => {
+          if (streamIdRef.current !== streamId) return;
+          if (event.conversationId && event.conversationId !== activeConversationId) {
+            newConversationId = event.conversationId;
+          }
+        },
+        onSources: (event) => {
+          if (streamIdRef.current !== streamId) return;
+          const sources = event.sources ?? [];
+          setMessages((current) =>
+            current.map((msg) =>
+              msg.id === assistantMessage.id ? { ...msg, sources } : msg
+            )
+          );
+        },
+        onToken: (event) => {
+          if (streamIdRef.current !== streamId) return;
+          setStatus('streaming');
+          setMessages((current) =>
+            current.map((msg) =>
+              msg.id === assistantMessage.id
+                ? { ...msg, content: msg.content + event.text }
+                : msg
+            )
+          );
+        },
+        onDone: () => {
+          if (streamIdRef.current !== streamId) return;
+        },
       });
 
-      const nextConversationId = result.conversationId ?? activeConversationId;
-      const isNewConversation = nextConversationId && nextConversationId !== activeConversationId;
+      if (streamIdRef.current !== streamId) return;
 
-      if (isNewConversation) {
-        setActiveConversationId(nextConversationId);
-      }
-
-      const assistantMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: result.answer ?? '',
-        sources: result.sources ?? [],
-      };
-
-      setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+      abortControllerRef.current = null;
+      lastAssistantIdRef.current = null;
       setStatus('success');
 
-      if (isNewConversation) {
-        await fetchConversations();
+      if (newConversationId) {
+        setActiveConversationId(newConversationId);
+        await fetchConversations(true);
+      }
+    } catch (error_) {
+      if (streamIdRef.current !== streamId) return;
+
+      abortControllerRef.current = null;
+      lastAssistantIdRef.current = null;
+
+      if (error_.name === 'AbortError') {
+        setStatus('aborted');
+        return;
       }
 
-      return result;
-    } catch (error_) {
       setStatus('error');
       setError(error_ instanceof Error ? error_.message : 'Chat failed.');
       throw error_;
     }
   }
 
+  function abortStream() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+
+      const orphanId = lastAssistantIdRef.current;
+      if (orphanId) {
+        setMessages((current) => current.filter((msg) => msg.id !== orphanId));
+      }
+      lastAssistantIdRef.current = null;
+      streamIdRef.current++;
+      setStatus('aborted');
+    }
+  }
+
   function resetConversation() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    lastAssistantIdRef.current = null;
+    streamIdRef.current++;
     setActiveConversationId('');
     setMessages([]);
     setMessage('');
@@ -177,11 +260,12 @@ export function useChat() {
     status,
     error,
     send,
+    abortStream,
     resetConversation,
     selectConversation,
     renameConversation,
     deleteConversation,
     fetchConversations,
-    isLoading: status === 'loading',
+    isLoading: status === 'loading' || status === 'streaming',
   };
 }

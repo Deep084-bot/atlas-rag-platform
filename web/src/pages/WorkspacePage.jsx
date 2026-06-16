@@ -19,7 +19,11 @@ function StatusPill({ status, children }) {
         ? 'bg-rose-500/15 text-rose-200 border-rose-500/20'
         : status === 'loading'
           ? 'bg-amber-500/15 text-amber-200 border-amber-500/20'
-          : 'bg-white/5 text-slate-300 border-white/10';
+          : status === 'streaming'
+            ? 'bg-atlas-teal/15 text-atlas-teal border-atlas-teal/20'
+            : status === 'aborted'
+              ? 'bg-slate-500/15 text-slate-400 border-slate-500/20'
+              : 'bg-white/5 text-slate-300 border-white/10';
 
   return <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${styles}`}>{children}</span>;
 }
@@ -319,11 +323,13 @@ export function WorkspacePage() {
                     {activeConversation && (
                       <div className="flex items-center justify-between">
                         <h2 className="text-lg font-semibold text-white">{activeConversation.title}</h2>
-                        <StatusPill status={chat.status}>{chat.status === 'idle' ? 'Ready' : chat.status}</StatusPill>
+                        <StatusPill status={chat.status}>
+                          {chat.status === 'idle' ? 'Ready' : chat.status === 'streaming' ? 'Streaming' : chat.status === 'loading' ? 'Thinking...' : chat.status === 'aborted' ? 'Cancelled' : chat.status}
+                        </StatusPill>
                       </div>
                     )}
 
-                    {showMessages && <ChatTranscript messages={chat.messages} />}
+                    {showMessages && <ChatTranscript messages={chat.messages} isStreaming={chat.isLoading} />}
                   </div>
                 )}
               </div>
@@ -352,8 +358,17 @@ export function WorkspacePage() {
                     disabled={chat.isLoading}
                     className="rounded-full bg-atlas-sky px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-sky/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {chat.isLoading ? 'Sending...' : 'Send'}
+                    Send
                   </button>
+                  {chat.isLoading && (
+                    <button
+                      type="button"
+                      onClick={chat.abortStream}
+                      className="rounded-full border border-rose-500/30 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20"
+                    >
+                      Stop
+                    </button>
+                  )}
                 </div>
               </div>
             </>
@@ -414,7 +429,7 @@ export function WorkspacePage() {
                     disabled={upload.isLoading || documents.isLoading}
                     className="rounded-full bg-atlas-teal px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-atlas-teal/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {upload.isLoading ? 'Uploading...;' : 'Upload'}
+                    {upload.isLoading ? 'Uploading...' : 'Upload'}
                   </button>
                   <StatusPill status={upload.status}>{upload.status === 'idle' ? 'Ready' : upload.status}</StatusPill>
                   {upload.file && <span className="text-sm text-slate-300">Selected file: {upload.file.name}</span>}

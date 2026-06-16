@@ -79,10 +79,17 @@ export function ConversationItem({ conversation, isActive, onSelect, onRename, o
 
   return (
     <div className="relative group">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => onSelect(conversation.id)}
-        className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(conversation.id);
+          }
+        }}
+        className={`w-full cursor-pointer rounded-xl px-3 py-2 text-left text-sm transition ${
           isActive
             ? 'border border-atlas-teal/30 bg-atlas-teal/15 text-white'
             : 'border border-transparent text-slate-300 hover:bg-white/5'
@@ -107,7 +114,7 @@ export function ConversationItem({ conversation, isActive, onSelect, onRename, o
         <p className="mt-0.5 text-xs text-slate-500">
           {new Date(conversation.updatedAt).toLocaleDateString()}
         </p>
-      </button>
+      </div>
 
       {menuOpen && (
         <div
