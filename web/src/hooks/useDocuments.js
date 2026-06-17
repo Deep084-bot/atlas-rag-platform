@@ -4,12 +4,63 @@ import { deleteDocument, listDocuments, renameDocument as renameDocumentApi } fr
 
 const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'ocr', 'chunking', 'embedding']);
 const POLLING_TIMEOUT_MS = 600_000;
+const POLL_INTERVAL_INITIAL_MS = 2_000;
+const POLL_INTERVAL_MAX_MS = 10_000;
+const POLL_BACKOFF_RATE = 1.5;
 
 export function useDocuments() {
   const [documents, setDocuments] = useState([]);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
+
+  const pollIntervalRef = useRef(POLL_INTERVAL_INITIAL_MS);
+  const pollStartRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const mountedRef = useRef(false);
+
+  function hasProcessingDocuments(docs) {
+    return docs.some((d) => POLLING_STATUSES.has(d.status));
+  }
+
+  function cancelPollTimer() {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  function startPoll(delayMs) {
+    cancelPollTimer();
+
+    if (pollStartRef.current === null) {
+      pollStartRef.current = Date.now();
+    }
+
+    if (Date.now() - pollStartRef.current >= POLLING_TIMEOUT_MS) {
+      pollStartRef.current = null;
+      return;
+    }
+
+    pollTimerRef.current = setTimeout(async () => {
+      try {
+        const nextDocuments = await loadDocuments();
+        if (!hasProcessingDocuments(nextDocuments)) {
+          pollStartRef.current = null;
+          pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
+          return;
+        }
+        const nextDelay = Math.min(
+          Math.round(pollIntervalRef.current * POLL_BACKOFF_RATE),
+          POLL_INTERVAL_MAX_MS
+        );
+        pollIntervalRef.current = nextDelay;
+        startPoll(nextDelay);
+      } catch {
+        startPoll(pollIntervalRef.current);
+      }
+    }, delayMs);
+  }
 
   async function loadDocuments() {
     setStatus((currentStatus) => (currentStatus === 'idle' ? 'loading' : currentStatus));
@@ -28,35 +79,21 @@ export function useDocuments() {
     }
   }
 
-  const pollStartRef = useRef(null);
-
   useEffect(() => {
-    void loadDocuments().catch(() => {});
-  }, [refreshNonce]);
+    mountedRef.current = true;
 
-  useEffect(() => {
-    const shouldPoll = documents.some((document) => POLLING_STATUSES.has(document.status));
-
-    if (!shouldPoll) {
-      pollStartRef.current = null;
-      return undefined;
-    }
-
-    if (pollStartRef.current === null) {
-      pollStartRef.current = Date.now();
-    }
-
-    const timer = setInterval(() => {
-      if (Date.now() - pollStartRef.current >= POLLING_TIMEOUT_MS) {
-        clearInterval(timer);
-        return;
+    void loadDocuments().then((docs) => {
+      if (mountedRef.current && hasProcessingDocuments(docs)) {
+        pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
+        startPoll(POLL_INTERVAL_INITIAL_MS);
       }
+    }).catch(() => {});
 
-      void loadDocuments().catch(() => {});
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [documents]);
+    return () => {
+      mountedRef.current = false;
+      cancelPollTimer();
+    };
+  }, [refreshNonce]);
 
   async function removeDocument(documentId) {
     const previous = documents;

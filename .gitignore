@@ -8,4 +8,4 @@ server/dist
 coverage
 .DS_Store
 uploads/
-.env
+.enveng.traineddata

@@ -38,6 +38,7 @@ import { ocrPdf } from './ocr/ocrService.js';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const generationConfig = createGenerationConfig();
 const storageProvider = new LocalStorageProvider();
 const pool = getPool();
@@ -90,6 +91,8 @@ const chatService = createChatService({
   conversationDocumentRepository,
   retrievalService,
   generationService,
+  documentsRepository,
+  storageProvider,
   historyLimit: 6,
   retrievalTopK: generationConfig.retrievalTopK,
   similarityThreshold: generationConfig.retrievalSimilarityThreshold
@@ -105,11 +108,30 @@ app.use(
 );
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.all('/api/auth/*', authHandler);
+const CREDENTIAL_AUTH_PATHS = new Set([
+  '/api/auth/sign-in/email',
+  '/api/auth/sign-up/email',
+]);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    if (req.method !== 'POST') return true;
+    return !CREDENTIAL_AUTH_PATHS.has(req.path);
+  },
+  message: {
+    error: 'rate_limit_exceeded',
+    category: 'validation',
+    message: 'Too many login attempts. Please try again later.',
+  },
+});
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -119,6 +141,8 @@ const apiLimiter = rateLimit({
   },
 });
 
+app.all('/api/auth/*', authLimiter);
+app.all('/api/auth/*', authHandler);
 app.use('/api', apiLimiter);
 
 app.use(express.json({ limit: '2mb' }));

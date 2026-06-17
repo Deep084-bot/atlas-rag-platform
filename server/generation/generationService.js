@@ -92,7 +92,7 @@ export function createGenerationService({
       const sources = retrieval.retrievedContext ?? [];
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(retrieval.query, sources) : 0;
-      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.50 && overlapCount >= 1;
 
       console.log('[atlas]', {
         query: retrieval.query,

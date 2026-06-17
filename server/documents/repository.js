@@ -250,6 +250,23 @@ export class DocumentsRepository {
     return result.rows[0] ?? null;
   }
 
+  async countConversationsForDocument(documentId) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        SELECT COUNT(*)::int AS count
+        FROM conversation_documents
+        WHERE document_id = $1
+      `,
+      [documentId]
+    );
+
+    return result.rows[0].count;
+  }
+
   async renameDocument(id, userId, fileName) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');

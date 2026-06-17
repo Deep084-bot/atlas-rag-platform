@@ -10,7 +10,11 @@ export class ConversationDocumentRepository {
       id: row.id,
       fileName: row.file_name,
       fileType: row.file_type,
-      status: row.status
+      status: row.status,
+      progress: Number(row.progress ?? 0),
+      createdAt: row.created_at,
+      readyAt: row.ready_at,
+      failureReason: row.failure_reason
     };
   }
 
@@ -21,7 +25,7 @@ export class ConversationDocumentRepository {
 
     const result = await this.pool.query(
       `
-        SELECT d.id, d.file_name, d.file_type, d.status
+        SELECT d.id, d.file_name, d.file_type, d.status, d.progress, d.created_at, d.ready_at, d.failure_reason
         FROM conversation_documents cd
         INNER JOIN documents d ON d.id = cd.document_id
         INNER JOIN chat_threads ct ON ct.id = cd.conversation_id

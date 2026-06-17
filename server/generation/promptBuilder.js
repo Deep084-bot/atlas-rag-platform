@@ -23,6 +23,37 @@ function formatRetrievedContext(retrievedContext) {
     .join('\n\n');
 }
 
+const SUMMARY_SYSTEM_INSTRUCTIONS = [
+  'You are Atlas, a document analysis assistant.',
+  'Generate a comprehensive summary of the document based on the retrieved context below.',
+  'Cover the main topics, purpose, key points, and notable details found in the context.',
+  'Use only the retrieved context as the source of information.',
+  'If the retrieved context is empty or lacks sufficient information, reply exactly: insufficient context.',
+  'Do NOT treat this as a question-answering task. Generate a summary.'
+].join(' ');
+
+export function buildSummaryPrompt({ question, retrievedContext }) {
+  const contextBlock = formatRetrievedContext(retrievedContext);
+
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: SUMMARY_SYSTEM_INSTRUCTIONS
+      },
+      {
+        role: 'user',
+        content: [
+          `Request: ${question}`,
+          'Retrieved context:',
+          contextBlock,
+          'Provide a comprehensive summary based on the context above.'
+        ].join('\n\n')
+      }
+    ]
+  };
+}
+
 const FALLBACK_SYSTEM_INSTRUCTIONS = [
   'You are Atlas.',
   "The user's uploaded documents do not contain relevant information for this question.",

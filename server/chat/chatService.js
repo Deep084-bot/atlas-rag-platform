@@ -38,6 +38,73 @@ const CHAT_SYSTEM_INSTRUCTIONS = [
   'If the retrieved context does not support the answer, reply exactly: insufficient context.'
 ].join(' ');
 
+const SUMMARY_CHAT_SYSTEM_INSTRUCTIONS = [
+  'You are Atlas, a document analysis assistant.',
+  'The user is asking you to summarize or describe a document.',
+  'Based on the retrieved context chunks below, generate a comprehensive summary of the document.',
+  'Cover the main topics, purpose, key points, and notable details found in the context.',
+  'Use only the retrieved context for factual claims.',
+  'If the retrieved context is empty or lacks sufficient information, reply exactly: insufficient context.',
+  'Do NOT treat this as a question-answering task. Generate a summary of the document.'
+].join(' ');
+
+function isDocumentSummaryQuery(question) {
+  const patterns = [
+    /^tell\s+me\s+about\b/i,
+    /^summarize\b/i,
+    /^summarise\b/i,
+    /^what\s+(is|does)\s+(this|the)\s+(document|file|pdf)\s+(about|cover|contain|say)/i,
+    /^give\s+me\s+(a\s+)?summary/i,
+    /^what\s+is\s+this\s+(document|file|pdf)\s+(about\s+)?\??$/i,
+    /^can\s+you\s+(summarize|summarise|tell\s+me\s+about)\b/i,
+  ];
+  return patterns.some((re) => re.test(question));
+}
+
+function buildSummaryChatPrompt({ question, history, retrievedContext }) {
+  const messages = [
+    { role: 'system', content: SUMMARY_CHAT_SYSTEM_INSTRUCTIONS }
+  ];
+
+  for (const message of history) {
+    messages.push({ role: message.role, content: message.content });
+  }
+
+  if (retrievedContext.length > 0) {
+    messages.push({
+      role: 'system',
+      content: ['Retrieved context:', formatRetrievedContext(retrievedContext)].join('\n\n')
+    });
+  }
+
+  messages.push({ role: 'user', content: question });
+
+  return { messages };
+}
+
+const LOW_QUALITY_OCR_SYSTEM_INSTRUCTIONS = [
+  'You are Atlas, a document analysis assistant.',
+  'The user is asking about a document that was uploaded to this conversation.',
+  'However, the extracted text from this document is too noisy, garbled, or incomplete to read reliably.',
+  'Do NOT attempt to summarize or answer based on unreadable text.',
+  'Respond with a brief message stating that the document was processed but the extracted text quality is insufficient to generate a reliable summary.',
+  'Do NOT claim the document does not exist or that no documents were uploaded.'
+].join(' ');
+
+function buildLowQualityOcrPrompt({ question, history }) {
+  const messages = [
+    { role: 'system', content: LOW_QUALITY_OCR_SYSTEM_INSTRUCTIONS }
+  ];
+
+  for (const message of history) {
+    messages.push({ role: message.role, content: message.content });
+  }
+
+  messages.push({ role: 'user', content: question });
+
+  return { messages };
+}
+
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
 
@@ -102,6 +169,8 @@ export function createChatService({
   conversationDocumentRepository,
   retrievalService,
   generationService,
+  documentsRepository,
+  storageProvider,
   historyLimit = 6,
   retrievalTopK = 6,
   similarityThreshold = 0.5
@@ -154,32 +223,62 @@ export function createChatService({
 
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
-      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.50 && overlapCount >= 1;
+
+      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
+      const isSummary = isSummaryQuery && docCount > 0;
+
+      if (sources.length > 0) {
+        sources.forEach((chunk, index) => {
+          console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
+            index,
+            chunk.fileName || '?',
+            chunk.similarity || 0,
+            (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+        });
+      }
 
       console.log('[atlas]', {
         query: normalizedMessage,
         topSimilarity,
         overlapCount,
         retrievedChunks: sources.length,
-        mode: shouldUseRag ? 'rag' : 'fallback'
+        mode: shouldUseRag ? 'rag' : 'fallback',
+        summaryMode: isSummary
       });
 
       let prompt;
       let activeSources;
 
       if (shouldUseRag) {
-        prompt = buildChatPrompt({
-          question: normalizedMessage,
-          history,
-          retrievedContext: sources
-        });
+        prompt = isSummary
+          ? buildSummaryChatPrompt({ question: normalizedMessage, history, retrievedContext: sources })
+          : buildChatPrompt({ question: normalizedMessage, history, retrievedContext: sources });
         activeSources = sources;
+      } else if (isSummary) {
+        prompt = buildLowQualityOcrPrompt({
+          question: normalizedMessage,
+          history
+        });
+        activeSources = [];
       } else {
         prompt = buildFallbackChatPrompt({
           question: normalizedMessage,
           history
         });
         activeSources = [];
+      }
+
+      if (prompt.messages) {
+        const systemMsg = prompt.messages.find((m) => m.role === 'system');
+        const userMsg = prompt.messages.find((m) => m.role === 'user');
+        const contextMsgs = prompt.messages.filter((m) => m.role === 'system' && m.content.includes('[Chunk'));
+
+        console.log('[SUMMARY PROMPT PREVIEW]');
+        console.log('system:', (systemMsg?.content || '').slice(0, 500));
+        console.log('user:', (userMsg?.content || '').slice(0, 500));
+        console.log('contextBlocks:', contextMsgs.length);
+        console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
       }
 
       const generation = await generationService.generateFromPrompt({
@@ -254,32 +353,62 @@ export function createChatService({
 
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
-      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
+      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.50 && overlapCount >= 1;
+
+      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
+      const isSummary = isSummaryQuery && docCount > 0;
+
+      if (sources.length > 0) {
+        sources.forEach((chunk, index) => {
+          console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
+            index,
+            chunk.fileName || '?',
+            chunk.similarity || 0,
+            (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+        });
+      }
 
       console.log('[atlas]', {
         query: normalizedMessage,
         topSimilarity,
         overlapCount,
         retrievedChunks: sources.length,
-        mode: shouldUseRag ? 'rag' : 'fallback'
+        mode: shouldUseRag ? 'rag' : 'fallback',
+        summaryMode: isSummary
       });
 
       let prompt;
       let activeSources;
 
       if (shouldUseRag) {
-        prompt = buildChatPrompt({
-          question: normalizedMessage,
-          history,
-          retrievedContext: sources
-        });
+        prompt = isSummary
+          ? buildSummaryChatPrompt({ question: normalizedMessage, history, retrievedContext: sources })
+          : buildChatPrompt({ question: normalizedMessage, history, retrievedContext: sources });
         activeSources = sources;
+      } else if (isSummary) {
+        prompt = buildLowQualityOcrPrompt({
+          question: normalizedMessage,
+          history
+        });
+        activeSources = [];
       } else {
         prompt = buildFallbackChatPrompt({
           question: normalizedMessage,
           history
         });
         activeSources = [];
+      }
+
+      if (prompt.messages) {
+        const systemMsg = prompt.messages.find((m) => m.role === 'system');
+        const userMsg = prompt.messages.find((m) => m.role === 'user');
+        const contextMsgs = prompt.messages.filter((m) => m.role === 'system' && m.content.includes('[Chunk'));
+
+        console.log('[SUMMARY PROMPT PREVIEW]');
+        console.log('system:', (systemMsg?.content || '').slice(0, 500));
+        console.log('user:', (userMsg?.content || '').slice(0, 500));
+        console.log('contextBlocks:', contextMsgs.length);
+        console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
       }
 
       const stream = generationService.generateStreamFromPrompt({
@@ -346,6 +475,24 @@ export function createChatService({
 
       if (!conversation) {
         return null;
+      }
+
+      const docs = await conversationDocumentRepository.listByConversation(normalizedConversationId, normalizedUserId);
+
+      for (const doc of docs) {
+        const count = await documentsRepository.countConversationsForDocument(doc.id);
+
+        if (count <= 1) {
+          const deleted = await documentsRepository.deleteDocumentByIdForUser(doc.id, normalizedUserId);
+
+          if (deleted?.storage_path) {
+            try {
+              await storageProvider.deleteFile(deleted.storage_path);
+            } catch (fileError) {
+              console.warn('[deleteConversation] Failed to delete file for document %s: %s', doc.id, fileError instanceof Error ? fileError.message : fileError);
+            }
+          }
+        }
       }
 
       return await conversationRepository.deleteConversationForUser(normalizedConversationId, normalizedUserId);

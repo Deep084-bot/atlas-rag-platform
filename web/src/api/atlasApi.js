@@ -187,6 +187,10 @@ export function sendChatMessageStream({ conversationId, message, signal, onMeta,
   });
 }
 
+export async function createConversation() {
+  return requestJson('/api/chat/conversations', { method: 'POST' });
+}
+
 export async function listConversations() {
   return requestJson('/api/chat/conversations');
 }

@@ -46,10 +46,19 @@ function release() {
 }
 
 export async function ocrPdf(pdfBuffer, { maxPages = 10, signal } = {}) {
+  console.log('[OCR] acquire lock');
   await acquire();
+  console.log('[OCR] lock acquired');
   try {
+    console.log('[OCR] rendering pages');
     const pageImages = await renderPdfPages(pdfBuffer, { maxPages, signal });
+    console.log('[OCR] rendered pages count=%d', pageImages.length);
+
+    console.log('[OCR] starting OCR images count=%d', pageImages.length);
     const texts = await ocrPageImages(pageImages, { signal });
+    const totalChars = texts.reduce((sum, t) => sum + t.length, 0);
+    console.log('[OCR] OCR finished totalChars=%d', totalChars);
+
     return texts.join('\n').trim();
   } finally {
     release();

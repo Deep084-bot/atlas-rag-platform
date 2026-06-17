@@ -210,6 +210,36 @@ export function createChatRouter({ chatService, conversationRepository, conversa
     }
   });
 
+  router.post('/conversations', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const conversation = await conversationRepository.createConversation({ userId });
+
+      return response.status(201).json(conversation);
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_create_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_create_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
   router.get('/conversations', async (request, response) => {
     try {
       const userId = authenticate(request, response);
