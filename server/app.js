@@ -18,6 +18,7 @@ import { HuggingFaceProvider } from './embeddings/HuggingFaceProvider.js';
 import { LocalTransformersProvider } from './embeddings/LocalTransformersProvider.js';
 import { LocalStorageProvider } from './storage/local.js';
 import { ConversationRepository } from './chat/conversationRepository.js';
+import { ConversationDocumentRepository } from './chat/conversationDocumentRepository.js';
 import { createChatRouter } from './chat/routes.js';
 import { createChatService } from './chat/chatService.js';
 import { createGenerationRouter } from './generation/routes.js';
@@ -32,6 +33,7 @@ import { createRetrievalRouter } from './retrieval/routes.js';
 import { createRetrievalService } from './retrieval/retrievalService.js';
 import { verifyDatabaseConnection } from './db.js';
 import { authHandler, authMiddleware } from './auth.js';
+import { ocrPdf } from './ocr/ocrService.js';
 
 dotenv.config();
 
@@ -43,9 +45,10 @@ const documentsRepository = new DocumentsRepository(pool);
 const chunkRepository = new ChunkRepository(pool);
 const embeddingRepository = new EmbeddingRepository(pool);
 const conversationRepository = new ConversationRepository(pool);
+const conversationDocumentRepository = new ConversationDocumentRepository(pool);
 const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
-const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService });
+const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, ocrService: { ocrPdf } });
 const embeddingProviderName = (process.env.EMBEDDING_PROVIDER ?? 'huggingface').toLowerCase();
 const embeddingProvider =
   embeddingProviderName === 'local' || embeddingProviderName === 'local-transformers'
@@ -84,6 +87,7 @@ const generationService = createGenerationService({
 });
 const chatService = createChatService({
   conversationRepository,
+  conversationDocumentRepository,
   retrievalService,
   generationService,
   historyLimit: 6,
@@ -127,13 +131,14 @@ app.use(
     documentsRepository,
     chunkService,
     embeddingService,
-    documentOrchestrator
+    documentOrchestrator,
+    conversationDocumentRepository
   })
 );
 app.use('/api/search', createSearchRouter({ searchService }));
 app.use('/api/retrieval', createRetrievalRouter({ retrievalService }));
 app.use('/api/generate', createGenerationRouter({ generationService }));
-app.use('/api/chat', createChatRouter({ chatService, conversationRepository }));
+app.use('/api/chat', createChatRouter({ chatService, conversationRepository, conversationDocumentRepository }));
 
 app.get(['/health', '/api/health'], (_request, response) => {
   response.json({

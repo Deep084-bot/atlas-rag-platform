@@ -2,6 +2,10 @@ import { readFile } from 'node:fs/promises';
 
 import { extractTextFromUpload } from './extractText.js';
 
+const OCR_TEXT_MIN_LENGTH = 50;
+const MAX_OCR_PAGES = 10;
+const MAX_OCR_FILE_SIZE = (Number.parseInt(process.env.MAX_OCR_FILE_SIZE_MB, 10) || 15) * 1024 * 1024;
+
 function mapFileTypeToMimeType(fileType) {
   if (fileType === 'pdf') {
     return 'application/pdf';
@@ -10,7 +14,7 @@ function mapFileTypeToMimeType(fileType) {
   return 'text/plain';
 }
 
-export function createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService }) {
+export function createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService, ocrService }) {
   let activeEmbeddingService = embeddingService;
 
   return {
@@ -36,7 +40,7 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
         return document;
       }
 
-      if (['extracting', 'chunking', 'embedding'].includes(document.status)) {
+      if (['extracting', 'ocr', 'chunking', 'embedding'].includes(document.status)) {
         return document;
       }
 
@@ -57,9 +61,39 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
           originalName: document.fileName
         });
 
+        let finalText = extracted.extractedText;
+        let finalFileType = extracted.fileType;
+
+        if (
+          extracted.fileType === 'pdf'
+          && extracted.extractedText.length < OCR_TEXT_MIN_LENGTH
+          && ocrService
+        ) {
+          if (document.file_size_bytes > MAX_OCR_FILE_SIZE) {
+            throw new Error(
+              `This scanned PDF is too large for OCR (max ${MAX_OCR_FILE_SIZE / 1024 / 1024} MB).`
+            );
+          }
+
+          await documentsRepository.updateStatus(documentId, {
+            status: 'ocr',
+            progress: 45,
+            failureReason: null,
+            processingStartedAt
+          });
+
+          const ocrText = await ocrService.ocrPdf(buffer, { maxPages: MAX_OCR_PAGES });
+
+          if (!ocrText) {
+            throw new Error('OCR was unable to extract text from this PDF. Ensure pages contain readable text.');
+          }
+
+          finalText = ocrText;
+        }
+
         await documentsRepository.updateDocumentText(documentId, {
-          extractedText: extracted.extractedText,
-          fileType: extracted.fileType
+          extractedText: finalText,
+          fileType: finalFileType
         });
 
         await documentsRepository.updateStatus(documentId, {

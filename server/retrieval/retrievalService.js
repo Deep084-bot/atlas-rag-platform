@@ -22,7 +22,7 @@ function parseSimilarityThreshold(value, fallback) {
 
 export function createRetrievalService({ searchService, defaultTopK = 10, maxTopK = 25, defaultSimilarityThreshold = 0.5 }) {
   return {
-    async retrieve(query, { topK, similarityThreshold, userId } = {}) {
+    async retrieve(query, { topK, similarityThreshold, userId, conversationId } = {}) {
       const normalizedQuery = typeof query === 'string' ? query.trim() : '';
 
       if (!normalizedQuery) {
@@ -38,7 +38,7 @@ export function createRetrievalService({ searchService, defaultTopK = 10, maxTop
       const requestedTopK = parsePositiveInteger(topK, defaultTopK);
       const effectiveTopK = Math.min(requestedTopK, maxTopK);
       const effectiveThreshold = parseSimilarityThreshold(similarityThreshold, defaultSimilarityThreshold);
-      const { matches } = await searchService.search(normalizedQuery, { limit: effectiveTopK, userId: normalizedUserId });
+      const { matches } = await searchService.search(normalizedQuery, { limit: effectiveTopK, userId: normalizedUserId, conversationId });
       const retrievedContext = matches.filter((match) => Number(match.similarity) >= effectiveThreshold);
 
       return {

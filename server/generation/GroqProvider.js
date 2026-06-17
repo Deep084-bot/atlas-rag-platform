@@ -80,7 +80,6 @@ export class GroqProvider extends GenerationProvider {
   }
 
   async *generateStream({ messages, temperature = 0, maxTokens = 512, signal } = {}) {
-    console.log('[groq-stream] generateStream entered');
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new TypeError('GroqProvider.generateStream expects a non-empty messages array.');
     }
@@ -99,7 +98,6 @@ export class GroqProvider extends GenerationProvider {
       });
     }
 
-    console.log('[groq-stream] calling groq');
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -115,8 +113,6 @@ export class GroqProvider extends GenerationProvider {
       }),
       signal
     });
-
-    console.log('[groq-stream] response status', response.status);
 
     if (!response.ok) {
       let errorBody = '';
@@ -150,13 +146,10 @@ export class GroqProvider extends GenerationProvider {
         const { done, value } = await reader.read();
 
         if (done) {
-          console.log('[groq-stream] reader done — stream closed by server');
           break;
         }
 
         const rawChunk = decoder.decode(value, { stream: true });
-        const truncated = rawChunk.length > 500 ? rawChunk.slice(0, 500) + '...' : rawChunk;
-        console.log('[groq-stream] raw chunk:', JSON.stringify(truncated));
 
         buffer += rawChunk;
         const lines = buffer.split('\n');
@@ -164,14 +157,12 @@ export class GroqProvider extends GenerationProvider {
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) {
-            console.log('[groq-stream] skipping non-data line:', JSON.stringify(line));
             continue;
           }
 
           const data = line.slice(6).trim();
 
           if (data === '[DONE]') {
-            console.log('[groq-stream] received [DONE] — stream complete');
             return;
           }
 
@@ -180,23 +171,14 @@ export class GroqProvider extends GenerationProvider {
             const content = parsed?.choices?.[0]?.delta?.content || '';
 
             if (content) {
-              console.log('[groq-stream] parsed token:', JSON.stringify(content));
               yield content;
-            } else {
-              console.log('[groq-stream] empty delta content in:', JSON.stringify(data));
             }
-          } catch (parseError) {
-            console.log('[groq-stream] JSON parse failure for data:', JSON.stringify(data), 'error:', parseError.message);
+          } catch {
+            // skip malformed JSON lines
           }
         }
       }
-
-      console.log('[groq-stream] exiting reader loop — processing remaining buffer');
-      if (buffer.trim()) {
-        console.log('[groq-stream] unprocessed buffer:', JSON.stringify(buffer));
-      }
     } finally {
-      console.log('[groq-stream] cancelling reader');
       reader.cancel().catch(() => {});
     }
   }

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.13",
+    "@napi-rs/canvas": "^1.0.0",
     "better-auth": "^1.6.13",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -24,6 +25,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^6.0.227",
     "pg": "^8.13.0",
     "pgvector": "^0.2.0",
     "react": "^19.0.0",

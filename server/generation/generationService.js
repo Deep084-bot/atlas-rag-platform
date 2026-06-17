@@ -124,12 +124,10 @@ export function createGenerationService({
     },
 
     generateStreamFromPrompt({ prompt, sources = [], temperature: overrideTemperature, maxTokens: overrideMaxTokens, signal } = {}) {
-      console.log('[generation-service] generateStreamFromPrompt called');
       if (!prompt || !Array.isArray(prompt.messages) || prompt.messages.length === 0) {
         throw new Error('prompt is required.');
       }
 
-      console.log('[generation-service] delegating to generationProvider.generateStream');
       return generationProvider.generateStream({
         ...prompt,
         temperature: overrideTemperature ?? temperature,

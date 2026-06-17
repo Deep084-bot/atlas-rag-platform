@@ -12,7 +12,7 @@ function parsePositiveInteger(value, fallback) {
 
 export function createSearchService({ embeddingProvider, searchRepository, defaultTopK = 10, maxTopK = 25 }) {
   return {
-    async search(query, { limit, userId } = {}) {
+    async search(query, { limit, userId, conversationId } = {}) {
       const normalizedQuery = typeof query === 'string' ? query.trim() : '';
 
       if (!normalizedQuery) {
@@ -36,7 +36,8 @@ export function createSearchService({ embeddingProvider, searchRepository, defau
       const matches = await searchRepository.searchChunksByEmbeddingForUser({
         userId: normalizedUserId,
         embedding: queryEmbedding,
-        limit: topK
+        limit: topK,
+        conversationId
       });
 
       return { matches };

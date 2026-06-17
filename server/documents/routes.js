@@ -39,7 +39,7 @@ function requireAuthenticatedUser(request, response) {
   return userId;
 }
 
-export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService, documentOrchestrator }) {
+export function createDocumentsRouter({ storageProvider, documentsRepository, chunkService, embeddingService, documentOrchestrator, conversationDocumentRepository }) {
   const router = Router();
   const upload = buildUploadMiddleware();
 
@@ -130,6 +130,7 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
       }
 
       let savedFile = null;
+      let persistedDocument = null;
 
       try {
         const documentType = validateDocumentUpload({
@@ -143,7 +144,7 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
           mimeType: request.file.mimetype
         });
 
-        const persistedDocument = await documentsRepository.insertDocument({
+        persistedDocument = await documentsRepository.insertDocument({
           id: savedFile.documentId,
           userId,
           fileName: request.file.originalname,
@@ -156,6 +157,36 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
           progress: 10
         });
 
+        const conversationId = typeof request.body?.conversationId === 'string'
+          ? request.body.conversationId.trim()
+          : '';
+
+        if (conversationId) {
+          const attached = await conversationDocumentRepository.attachDocument(
+            conversationId,
+            persistedDocument.id,
+            userId
+          );
+
+          if (!attached) {
+            await documentsRepository.deleteDocumentByIdForUser(persistedDocument.id, userId);
+
+            if (savedFile?.storagePath) {
+              try {
+                await storageProvider.deleteFile(savedFile.storagePath);
+              } catch {
+                // Best-effort cleanup.
+              }
+            }
+
+            return response.status(400).json({
+              error: 'upload_conversation_attachment_failed',
+              category: 'validation',
+              message: 'Conversation not found or document could not be attached.'
+            });
+          }
+        }
+
         void documentOrchestrator.startDocumentIngestion(persistedDocument.id);
 
         return response.status(201).json({
@@ -165,6 +196,14 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         if (savedFile?.storagePath) {
           try {
             await storageProvider.deleteFile(savedFile.storagePath);
+          } catch {
+            // Best-effort cleanup.
+          }
+        }
+
+        if (persistedDocument?.id) {
+          try {
+            await documentsRepository.deleteDocumentByIdForUser(persistedDocument.id, userId);
           } catch {
             // Best-effort cleanup.
           }

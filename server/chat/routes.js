@@ -18,7 +18,7 @@ function authenticate(request, response) {
   return userId;
 }
 
-export function createChatRouter({ chatService, conversationRepository }) {
+export function createChatRouter({ chatService, conversationRepository, conversationDocumentRepository }) {
   const router = Router();
 
   router.post('/', async (request, response) => {
@@ -119,18 +119,14 @@ export function createChatRouter({ chatService, conversationRepository }) {
 
       let assistantContent = '';
 
-      console.log('[chat-route] beginning stream iteration');
       try {
         for await (const token of chatInfo.stream) {
           if (aborted) break;
 
-          console.log('[chat-route] token received', token);
           assistantContent += token;
           response.write(`data: ${JSON.stringify({ type: 'token', text: token })}\n\n`);
         }
-        console.log('[chat-route] stream iteration completed');
       } catch (streamError) {
-        console.log('[chat-route] stream iteration threw', streamError.message);
         clearInterval(heartbeat);
 
         if (aborted) {
@@ -359,6 +355,133 @@ export function createChatRouter({ chatService, conversationRepository }) {
 
       return response.status(classified.statusCode).json({
         error: 'conversation_messages_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
+  router.get('/conversations/:id/documents', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const documents = await conversationDocumentRepository.listByConversation(
+        request.params.id,
+        userId
+      );
+
+      return response.json(documents);
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_documents_list_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_documents_list_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
+  router.post('/conversations/:id/documents', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const { documentId } = request.body ?? {};
+
+      if (!documentId || typeof documentId !== 'string') {
+        return response.status(400).json({
+          error: 'document_id_required',
+          category: 'validation',
+          message: 'documentId is required.'
+        });
+      }
+
+      const result = await conversationDocumentRepository.attachDocument(
+        request.params.id,
+        documentId,
+        userId
+      );
+
+      if (!result) {
+        return response.status(400).json({
+          error: 'attachment_failed',
+          category: 'validation',
+          message: 'Document could not be attached. It may already be attached, or the conversation or document could not be found.'
+        });
+      }
+
+      return response.status(201).json({ success: true });
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_document_attach_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_document_attach_failed',
+        category: classified.category,
+        message: classified.message
+      });
+    }
+  });
+
+  router.delete('/conversations/:id/documents/:documentId', async (request, response) => {
+    try {
+      const userId = authenticate(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const removed = await conversationDocumentRepository.detachDocument(
+        request.params.id,
+        request.params.documentId,
+        userId
+      );
+
+      if (!removed) {
+        return response.status(404).json({
+          error: 'not_found',
+          category: 'validation',
+          message: 'Attachment not found.'
+        });
+      }
+
+      return response.status(204).send();
+    } catch (error) {
+      const classified = classifyError(error);
+
+      if (classified.category === 'validation') {
+        return response.status(400).json({
+          error: 'conversation_document_detach_validation_failed',
+          category: classified.category,
+          message: classified.message
+        });
+      }
+
+      return response.status(classified.statusCode).json({
+        error: 'conversation_document_detach_failed',
         category: classified.category,
         message: classified.message
       });

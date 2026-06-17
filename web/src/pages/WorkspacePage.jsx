@@ -10,6 +10,7 @@ import { requestJson } from '../api/client.js';
 import { useDocuments } from '../hooks/useDocuments.js';
 import { useChat } from '../hooks/useChat.js';
 import { useUpload } from '../hooks/useUpload.js';
+import { DocumentAttachModal } from '../components/DocumentAttachModal.jsx';
 
 function StatusPill({ status, children }) {
   const styles =
@@ -47,6 +48,10 @@ function getDocumentStatusLabel(status) {
 
   if (status === 'failed') {
     return 'Failed';
+  }
+
+  if (status === 'ocr') {
+    return 'Reading scanned text...';
   }
 
   return 'Processing';
@@ -107,6 +112,7 @@ export function WorkspacePage() {
   const [documentSearch, setDocumentSearch] = useState('');
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [showAttachModal, setShowAttachModal] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -146,10 +152,18 @@ export function WorkspacePage() {
   }, [chat.activeConversationId, chat.conversations]);
 
   const filteredDocuments = useMemo(() => {
+    if (chat.activeConversationId) {
+      return chat.conversationDocuments.filter((d) =>
+        d.fileName.toLowerCase().includes(documentSearch.toLowerCase())
+      );
+    }
     return documents.documents.filter((d) =>
       d.fileName.toLowerCase().includes(documentSearch.toLowerCase())
     );
-  }, [documents.documents, documentSearch]);
+  }, [documents.documents, documentSearch, chat.conversationDocuments, chat.activeConversationId]);
+
+  const displayDocuments = chat.activeConversationId ? chat.conversationDocuments : documents.documents;
+  const documentCount = displayDocuments.length;
 
   function handleUploadFileChange(event) {
     const nextFile = event.target.files?.[0] ?? null;
@@ -175,8 +189,11 @@ export function WorkspacePage() {
     }
 
     try {
-      await upload.upload();
+      await upload.upload(chat.activeConversationId || undefined);
       await documents.reload();
+      if (chat.activeConversationId) {
+        await chat.fetchConversationDocuments(chat.activeConversationId);
+      }
     } catch {
       // handled in hook state
     }
@@ -410,7 +427,7 @@ export function WorkspacePage() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Document library">
+            <CollapsibleSection title={chat.activeConversationId ? `Documents (${documentCount})` : 'Document library'}>
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <label className="block rounded-2xl border border-dashed border-white/15 bg-slate-950/30 p-4">
                   <span className="mb-2 block text-sm font-medium text-slate-200">File picker</span>
@@ -439,29 +456,85 @@ export function WorkspacePage() {
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-slate-300">{documents.documents.length} document{documents.documents.length === 1 ? '' : 's'}</p>
-                  <button
-                    type="button"
-                    onClick={() => documents.reload().catch(() => {})}
-                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-                  >
-                    Refresh
-                  </button>
-                </div>
+                {chat.activeConversationId && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-300">
+                      {documentCount} document{documentCount === 1 ? '' : 's'}
+                      {chat.conversationDocumentsLoading && ' (loading...)'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {documents.documents.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAttachModal(true)}
+                          className="rounded-full bg-atlas-teal/15 px-4 py-2 text-xs font-semibold text-atlas-teal transition hover:bg-atlas-teal/25"
+                        >
+                          Attach Documents
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          documents.reload().catch(() => {});
+                          if (chat.activeConversationId) {
+                            chat.fetchConversationDocuments(chat.activeConversationId);
+                          }
+                        }}
+                        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                {documents.error && <p className="text-sm text-rose-200">{documents.error}</p>}
+                {!chat.activeConversationId && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-300">{documentCount} document{documentCount === 1 ? '' : 's'}</p>
+                    <button
+                      type="button"
+                      onClick={() => documents.reload().catch(() => {})}
+                      className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
 
-                <input
-                  type="text"
-                  value={documentSearch}
-                  onChange={(e) => setDocumentSearch(e.target.value)}
-                  placeholder="Search documents..."
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
-                />
+                {(chat.activeConversationId ? chat.conversationDocumentsError : documents.error) && (
+                  <p className="text-sm text-rose-200">{chat.activeConversationId ? chat.conversationDocumentsError : documents.error}</p>
+                )}
+
+                {chat.activeConversationId && documentCount === 0 && (
+                  <div className="flex items-center justify-center py-10">
+                    <div className="text-center">
+                      <p className="text-sm text-slate-400">No documents attached to this conversation.</p>
+                      <p className="mt-1 text-xs text-slate-500">Attach documents from your library to enable document-aware answers.</p>
+                      {documents.documents.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAttachModal(true)}
+                          className="mt-4 rounded-full bg-atlas-teal/15 px-5 py-2 text-sm font-semibold text-atlas-teal transition hover:bg-atlas-teal/25"
+                        >
+                          Attach Documents
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {documentCount > 0 && (
+                  <input
+                    type="text"
+                    value={documentSearch}
+                    onChange={(e) => setDocumentSearch(e.target.value)}
+                    placeholder="Search documents..."
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-atlas-teal/40 focus:bg-slate-900"
+                  />
+                )}
 
                 <div className="space-y-3">
-                  {documents.documents.length > 0 ? (
+                  {documentCount > 0 ? (
                     filteredDocuments.length > 0 ? (
                     filteredDocuments.map((document) => {
                       const visibleStatus = getDocumentStatusLabel(document.status);
@@ -486,11 +559,21 @@ export function WorkspacePage() {
                                 <h3 className="text-sm font-semibold text-white">{document.fileName}</h3>
                               )}
                               <p className="mt-1 text-xs text-slate-400">{formatFileType(document.fileType)} • {visibleStatus}</p>
-                              <p className="text-xs text-slate-500">Uploaded {formatUploadDate(document.createdAt)}</p>
+                              {document.createdAt && <p className="text-xs text-slate-500">Uploaded {formatUploadDate(document.createdAt)}</p>}
                             </div>
                             <div className="flex items-center gap-2">
                               <StatusPill status={statusTone}>{visibleStatus}</StatusPill>
-                              {renamingId === document.id ? null : isPendingDelete ? (
+                              {chat.activeConversationId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    chat.detachDocument(chat.activeConversationId, document.id).catch(() => {});
+                                  }}
+                                  className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/20"
+                                >
+                                  Remove
+                                </button>
+                              ) : renamingId === document.id ? null : isPendingDelete ? (
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-slate-400">Delete {document.fileName}?</span>
                                   <button
@@ -562,20 +645,31 @@ export function WorkspacePage() {
                       </div>
                     </div>
                   )
-                ) : (
+                ) : !chat.activeConversationId && documents.documents.length === 0 ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center">
                       <p className="text-sm text-slate-400">No documents uploaded yet.</p>
                       <p className="mt-1 text-xs text-slate-500">Upload a PDF to start building your knowledge base.</p>
                     </div>
                   </div>
-                )}
+                ) : null}
                 </div>
               </div>
             </CollapsibleSection>
           </div>
         </div>
       </div>
+      <DocumentAttachModal
+        open={showAttachModal}
+        onClose={() => setShowAttachModal(false)}
+        allDocuments={documents.documents}
+        attachedDocuments={chat.conversationDocuments}
+        onAttach={async (documentId) => {
+          if (chat.activeConversationId) {
+            await chat.attachDocument(chat.activeConversationId, documentId);
+          }
+        }}
+      />
     </main>
   );
 }

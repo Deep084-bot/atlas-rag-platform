@@ -1,11 +1,15 @@
 import { requestJson } from './client.js';
 
-export async function uploadDocument({ file, userId }) {
+export async function uploadDocument({ file, userId, conversationId }) {
   const formData = new FormData();
   formData.append('file', file);
 
   if (userId) {
     formData.append('userId', userId);
+  }
+
+  if (conversationId) {
+    formData.append('conversationId', conversationId);
   }
 
   return requestJson('/api/documents/upload', {
@@ -200,6 +204,23 @@ export async function renameConversation(id, title) {
 
 export async function deleteConversation(id) {
   return requestJson(`/api/chat/conversations/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function getConversationDocuments(conversationId) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(conversationId)}/documents`);
+}
+
+export async function attachDocumentToConversation(conversationId, documentId) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(conversationId)}/documents`, {
+    method: 'POST',
+    body: { documentId }
+  });
+}
+
+export async function detachDocumentFromConversation(conversationId, documentId) {
+  return requestJson(`/api/chat/conversations/${encodeURIComponent(conversationId)}/documents/${encodeURIComponent(documentId)}`, {
     method: 'DELETE'
   });
 }

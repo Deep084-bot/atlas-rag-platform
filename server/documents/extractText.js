@@ -27,12 +27,6 @@ export async function extractTextFromUpload({ buffer, mimeType, originalName }) 
     const parsed = await pdfParse(buffer);
     const extractedText = normalizeText(parsed.text);
 
-    if (extractedText.length === 0) {
-      throw new UploadValidationError(
-        'This PDF contains no extractable text. Scanned PDFs are not supported yet.'
-      );
-    }
-
     return { fileType, extractedText };
   }
 

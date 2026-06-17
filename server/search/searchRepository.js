@@ -41,7 +41,7 @@ export class SearchRepository {
     }));
   }
 
-  async searchChunksByEmbeddingForUser({ userId, embedding, limit = 10 }) {
+  async searchChunksByEmbeddingForUser({ userId, embedding, limit = 10, conversationId }) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
@@ -59,10 +59,14 @@ export class SearchRepository {
         INNER JOIN documents ON documents.id = chunks.document_id
         WHERE chunks.embedding IS NOT NULL
           AND documents.user_id = $1
+          AND ($4::uuid IS NULL OR chunks.document_id IN (
+            SELECT document_id FROM conversation_documents
+            WHERE conversation_id = $4::uuid
+          ))
         ORDER BY chunks.embedding <=> $2::vector ASC, chunks.created_at ASC
         LIMIT $3
       `,
-      [userId, toSql(embedding), limit]
+      [userId, toSql(embedding), limit, conversationId ?? null]
     );
 
     return result.rows.map((row) => ({

@@ -8,7 +8,7 @@ export function useUpload() {
   const [error, setError] = useState('');
   const [uploadedDocument, setUploadedDocument] = useState(null);
 
-  async function upload() {
+  async function upload(conversationId) {
     if (!file) {
       setError('Select a file first.');
       return null;
@@ -18,7 +18,10 @@ export function useUpload() {
     setError('');
 
     try {
-      const result = await uploadDocument({ file });
+      const result = await uploadDocument({
+        file,
+        conversationId: conversationId || undefined
+      });
       setUploadedDocument(result.document ?? null);
       setStatus('success');
       return result;

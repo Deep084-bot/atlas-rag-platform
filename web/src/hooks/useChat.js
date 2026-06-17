@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-import { listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi, sendChatMessageStream } from '../api/atlasApi.js';
+import { listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi, sendChatMessageStream, getConversationDocuments, attachDocumentToConversation, detachDocumentFromConversation } from '../api/atlasApi.js';
 
 function normalizeMessage(msg) {
   return {
@@ -24,6 +24,9 @@ export function useChat() {
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const [conversationDocuments, setConversationDocuments] = useState([]);
+  const [conversationDocumentsLoading, setConversationDocumentsLoading] = useState(false);
+  const [conversationDocumentsError, setConversationDocumentsError] = useState('');
 
   const activeRequestRef = useRef('');
   const abortControllerRef = useRef(null);
@@ -51,26 +54,74 @@ export function useChat() {
     fetchConversations();
   }, [fetchConversations]);
 
-  const selectConversation = useCallback(async (id) => {
-    setActiveConversationId(id);
-    setMessages([]);
-    setMessagesLoading(true);
-    setMessagesError('');
-    activeRequestRef.current = id;
+  const fetchConversationDocuments = useCallback(async (conversationId) => {
+    if (!conversationId) return;
+
+    setConversationDocumentsLoading(true);
+    setConversationDocumentsError('');
 
     try {
-      const data = await getConversationMessages(id);
-      if (activeRequestRef.current !== id) return;
-      setMessages(data.map(normalizeMessage));
+      const docs = await getConversationDocuments(conversationId);
+      if (activeRequestRef.current !== conversationId) return;
+      setConversationDocuments(Array.isArray(docs) ? docs : []);
     } catch (err) {
-      if (activeRequestRef.current !== id) return;
-      setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      if (activeRequestRef.current !== conversationId) return;
+      setConversationDocumentsError(err instanceof Error ? err.message : 'Failed to load documents');
     } finally {
-      if (activeRequestRef.current === id) {
-        setMessagesLoading(false);
+      if (activeRequestRef.current === conversationId) {
+        setConversationDocumentsLoading(false);
       }
     }
   }, []);
+
+  const selectConversation = useCallback(async (id) => {
+    setActiveConversationId(id);
+    setMessages([]);
+    setConversationDocuments([]);
+    setMessagesLoading(true);
+    setConversationDocumentsLoading(true);
+    setMessagesError('');
+    setConversationDocumentsError('');
+    activeRequestRef.current = id;
+
+    try {
+      const [data, docs] = await Promise.all([
+        getConversationMessages(id),
+        getConversationDocuments(id)
+      ]);
+      if (activeRequestRef.current !== id) return;
+      setMessages(data.map(normalizeMessage));
+      setConversationDocuments(Array.isArray(docs) ? docs : []);
+    } catch (err) {
+      if (activeRequestRef.current !== id) return;
+      const message = err instanceof Error ? err.message : 'Failed to load conversation';
+      setMessagesError(message);
+      setConversationDocumentsError(message);
+    } finally {
+      if (activeRequestRef.current === id) {
+        setMessagesLoading(false);
+        setConversationDocumentsLoading(false);
+      }
+    }
+  }, []);
+
+  async function attachDocument(conversationId, documentId) {
+    try {
+      await attachDocumentToConversation(conversationId, documentId);
+      await fetchConversationDocuments(conversationId);
+    } catch {
+      throw new Error('Failed to attach document.');
+    }
+  }
+
+  async function detachDocument(conversationId, documentId) {
+    try {
+      await detachDocumentFromConversation(conversationId, documentId);
+      await fetchConversationDocuments(conversationId);
+    } catch {
+      throw new Error('Failed to detach document.');
+    }
+  }
 
   async function send() {
     const trimmedMessage = message.trim();
@@ -206,6 +257,7 @@ export function useChat() {
     streamIdRef.current++;
     setActiveConversationId('');
     setMessages([]);
+    setConversationDocuments([]);
     setMessage('');
     setStatus('idle');
     setError('');
@@ -228,12 +280,14 @@ export function useChat() {
   async function deleteConversation(id) {
     const wasActive = id === activeConversationId;
     const previous = conversations;
+    const previousDocs = conversationDocuments;
 
     setConversations((prev) => prev.filter((c) => c.id !== id));
 
     if (wasActive) {
       setActiveConversationId('');
       setMessages([]);
+      setConversationDocuments([]);
     }
 
     try {
@@ -243,6 +297,7 @@ export function useChat() {
 
       if (wasActive) {
         setActiveConversationId(id);
+        setConversationDocuments(previousDocs);
       }
     }
   }
@@ -266,6 +321,12 @@ export function useChat() {
     renameConversation,
     deleteConversation,
     fetchConversations,
+    conversationDocuments,
+    conversationDocumentsLoading,
+    conversationDocumentsError,
+    fetchConversationDocuments,
+    attachDocument,
+    detachDocument,
     isLoading: status === 'loading' || status === 'streaming',
   };
 }

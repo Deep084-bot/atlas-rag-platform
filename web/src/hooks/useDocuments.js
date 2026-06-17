@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { deleteDocument, listDocuments, renameDocument as renameDocumentApi } from '../api/atlasApi.js';
 
-const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'chunking', 'embedding']);
+const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'ocr', 'chunking', 'embedding']);
 const POLLING_TIMEOUT_MS = 600_000;
 
 export function useDocuments() {

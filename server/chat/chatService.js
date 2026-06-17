@@ -99,6 +99,7 @@ function buildChatPrompt({ question, history, retrievedContext }) {
 
 export function createChatService({
   conversationRepository,
+  conversationDocumentRepository,
   retrievalService,
   generationService,
   historyLimit = 6,
@@ -136,13 +137,21 @@ export function createChatService({
         ? await conversationRepository.listRecentMessagesForUser(conversation.id, normalizedUserId, parsePositiveInteger(historyLimit, 6))
         : [];
 
-      const retrieval = await retrievalService.retrieve(normalizedMessage, {
-        topK: parsePositiveInteger(retrievalTopK, 6),
-        similarityThreshold,
-        userId: normalizedUserId
-      });
+      const docCount = await conversationDocumentRepository.countByConversation(conversation.id, normalizedUserId);
 
-      const sources = retrieval.retrievedContext ?? [];
+      let sources = [];
+
+      if (docCount > 0) {
+        const retrieval = await retrievalService.retrieve(normalizedMessage, {
+          topK: parsePositiveInteger(retrievalTopK, 6),
+          similarityThreshold,
+          userId: normalizedUserId,
+          conversationId: conversation.id
+        });
+
+        sources = retrieval.retrievedContext ?? [];
+      }
+
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
       const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
@@ -228,13 +237,21 @@ export function createChatService({
         ? await conversationRepository.listRecentMessagesForUser(conversation.id, normalizedUserId, parsePositiveInteger(historyLimit, 6))
         : [];
 
-      const retrieval = await retrievalService.retrieve(normalizedMessage, {
-        topK: parsePositiveInteger(retrievalTopK, 6),
-        similarityThreshold,
-        userId: normalizedUserId
-      });
+      const docCount = await conversationDocumentRepository.countByConversation(conversation.id, normalizedUserId);
 
-      const sources = retrieval.retrievedContext ?? [];
+      let sources = [];
+
+      if (docCount > 0) {
+        const retrieval = await retrievalService.retrieve(normalizedMessage, {
+          topK: parsePositiveInteger(retrievalTopK, 6),
+          similarityThreshold,
+          userId: normalizedUserId,
+          conversationId: conversation.id
+        });
+
+        sources = retrieval.retrievedContext ?? [];
+      }
+
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
       const shouldUseRag = sources.length > 0 && topSimilarity >= 0.55 && overlapCount >= 1;
@@ -265,13 +282,11 @@ export function createChatService({
         activeSources = [];
       }
 
-      console.log('[chat-service] creating stream');
       const stream = generationService.generateStreamFromPrompt({
         prompt,
         sources: activeSources,
         signal
       });
-      console.log('[chat-service] stream created');
 
       return {
         conversationId: conversation.id,
