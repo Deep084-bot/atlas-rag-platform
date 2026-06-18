@@ -135,8 +135,10 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
             textLength: ocrText ? ocrText.length : 0
           });
 
-          console.log('[OCR TEXT SAMPLE]');
-          console.log(ocrText ? ocrText.slice(0, 2000) : '(empty)');
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[OCR TEXT SAMPLE]');
+            console.log(ocrText ? ocrText.slice(0, 2000) : '(empty)');
+          }
 
           if (!ocrText) {
             throw new Error('OCR was unable to extract text from this PDF. Ensure pages contain readable text.');
@@ -156,6 +158,8 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
           lowQuality: ocrQuality.score < OCR_QUALITY_THRESHOLD,
           textLength: finalText.length
         });
+
+        await documentsRepository.updateOcrQuality(documentId, ocrQuality.score);
 
         await documentsRepository.updateDocumentText(documentId, {
           extractedText: finalText,

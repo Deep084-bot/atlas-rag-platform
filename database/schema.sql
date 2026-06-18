@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS documents (
   status text NOT NULL DEFAULT 'uploaded',
   progress integer NOT NULL DEFAULT 0,
   failure_reason text,
+  ocr_quality double precision,
   processing_started_at timestamptz,
   ready_at timestamptz,
   failed_at timestamptz,

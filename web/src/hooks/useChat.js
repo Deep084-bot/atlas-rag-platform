@@ -48,6 +48,7 @@ export function useChat() {
   const pollStartRef = useRef(null);
   const mountedRef = useRef(false);
   const documentsRequestRef = useRef(0);
+  const conversationsRequestRef = useRef(0);
 
   function hasProcessingDocuments(docs) {
     return docs.some((d) => POLLING_STATUSES.has(d.status));
@@ -103,16 +104,21 @@ export function useChat() {
   }
 
   const fetchConversations = useCallback(async (background = false) => {
+    const requestId = ++conversationsRequestRef.current;
+
     if (!background) {
       setConversationsLoading(true);
     }
     setConversationsError('');
     try {
       const data = await listConversations();
+      if (requestId !== conversationsRequestRef.current) return;
       setConversations(data);
     } catch (err) {
+      if (requestId !== conversationsRequestRef.current) return;
       setConversationsError(err instanceof Error ? err.message : 'Failed to load conversations');
     } finally {
+      if (requestId !== conversationsRequestRef.current) return;
       if (!background) {
         setConversationsLoading(false);
       }
@@ -420,6 +426,8 @@ export function useChat() {
   async function deleteConversation(id) {
     if (deletingConversationRef.current) return;
     deletingConversationRef.current = true;
+
+    conversationsRequestRef.current++;
 
     const wasActive = id === activeConversationId;
     const previous = conversations;

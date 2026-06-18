@@ -19,6 +19,7 @@ export class DocumentsRepository {
       sourceType: row.source_type,
       status: row.status,
       progress: Number(row.progress ?? 0),
+      ocrQuality: row.ocr_quality ?? null,
       processingStartedAt: row.processing_started_at,
       readyAt: row.ready_at,
       failedAt: row.failed_at,
@@ -279,9 +280,28 @@ export class DocumentsRepository {
             updated_at = now()
         WHERE id = $1
           AND user_id = $2
-        RETURNING id, file_name, file_type, file_size_bytes, storage_path, source_type, status, progress, failure_reason, processing_started_at, ready_at, failed_at, created_at, updated_at
+        RETURNING id, file_name, file_type, file_size_bytes, storage_path, source_type, status, progress, ocr_quality, failure_reason, processing_started_at, ready_at, failed_at, created_at, updated_at
       `,
       [id, userId, fileName]
+    );
+
+    return this.toDocumentSummary(result.rows[0] ?? null);
+  }
+
+  async updateOcrQuality(id, quality) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const result = await this.pool.query(
+      `
+        UPDATE documents
+        SET ocr_quality = $2,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, file_name, file_type, file_size_bytes, storage_path, source_type, status, progress, ocr_quality, failure_reason, processing_started_at, ready_at, failed_at, created_at, updated_at
+      `,
+      [id, quality]
     );
 
     return this.toDocumentSummary(result.rows[0] ?? null);

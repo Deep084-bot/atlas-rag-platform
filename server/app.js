@@ -37,6 +37,15 @@ import { ocrPdf } from './ocr/ocrService.js';
 
 dotenv.config();
 
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'GROQ_API_KEY'];
+
+for (const key of REQUIRED_ENV_VARS) {
+  if (!process.env[key]) {
+    console.error('FATAL: Missing required environment variable: %s', key);
+    process.exit(1);
+  }
+}
+
 const app = express();
 app.set('trust proxy', 1);
 const generationConfig = createGenerationConfig();
@@ -93,6 +102,7 @@ const chatService = createChatService({
   generationService,
   documentsRepository,
   storageProvider,
+  chunkService,
   historyLimit: 6,
   retrievalTopK: generationConfig.retrievalTopK,
   similarityThreshold: generationConfig.retrievalSimilarityThreshold

@@ -1,6 +1,8 @@
 import { ValidationError } from '../errors.js';
 import { buildFallbackChatPrompt } from '../generation/promptBuilder.js';
 
+const OCR_QUALITY_THRESHOLD = 0.30;
+
 function computeOverlap(question, chunks) {
   const normalizedQuestion = question.toLowerCase().replace(/[^\w\s]/g, ' ');
   const contextText = chunks
@@ -48,15 +50,42 @@ const SUMMARY_CHAT_SYSTEM_INSTRUCTIONS = [
   'Do NOT treat this as a question-answering task. Generate a summary of the document.'
 ].join(' ');
 
+function findMatchingDocument(query, documents) {
+  if (!query || !documents || documents.length === 0) return null;
+  const queryNormalized = query.toLowerCase().replace(/\s+/g, '');
+  let bestMatch = null;
+  let bestLength = 0;
+  for (const doc of documents) {
+    const lowerName = doc.fileName.toLowerCase();
+    if (queryNormalized.includes(lowerName) && lowerName.length > bestLength) {
+      bestMatch = doc;
+      bestLength = lowerName.length;
+    }
+  }
+  return bestMatch;
+}
+
+function getLastReferencedDocument(history, conversationDocs) {
+  if (!history || !conversationDocs || conversationDocs.length === 0) return null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user') {
+      const doc = findMatchingDocument(history[i].content, conversationDocs);
+      if (doc) return doc;
+    }
+  }
+  return null;
+}
+
 function isDocumentSummaryQuery(question) {
   const patterns = [
     /^tell\s+me\s+about\b/i,
     /^summarize\b/i,
     /^summarise\b/i,
+    /^(summary|summery)\b/i,
     /^what\s+(is|does)\s+(this|the)\s+(document|file|pdf)\s+(about|cover|contain|say)/i,
     /^give\s+me\s+(a\s+)?summary/i,
     /^what\s+is\s+this\s+(document|file|pdf)\s+(about\s+)?\??$/i,
-    /^can\s+you\s+(summarize|summarise|tell\s+me\s+about)\b/i,
+    /^can\s+you\s+(please\s+)?(summarize|summarise|tell\s+me\s+about)\b/i,
   ];
   return patterns.some((re) => re.test(question));
 }
@@ -103,6 +132,17 @@ function buildLowQualityOcrPrompt({ question, history }) {
   messages.push({ role: 'user', content: question });
 
   return { messages };
+}
+
+const PROCESSING_SYSTEM_INSTRUCTIONS = [
+  'You are Atlas, a document analysis assistant.',
+  'The user is asking about a document that is currently being processed.',
+  'Respond with a brief message stating that the document is still being processed and to try again in a moment.',
+  'Do NOT claim the document does not exist or that no documents were uploaded.'
+].join(' ');
+
+function buildProcessingPrompt() {
+  return { messages: [{ role: 'system', content: PROCESSING_SYSTEM_INSTRUCTIONS }] };
 }
 
 function parsePositiveInteger(value, fallback) {
@@ -171,6 +211,7 @@ export function createChatService({
   generationService,
   documentsRepository,
   storageProvider,
+  chunkService,
   historyLimit = 6,
   retrievalTopK = 6,
   similarityThreshold = 0.5
@@ -208,33 +249,128 @@ export function createChatService({
 
       const docCount = await conversationDocumentRepository.countByConversation(conversation.id, normalizedUserId);
 
+      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
+
       let sources = [];
+      let explicitDocMatch = false;
+      let followUpMatch = false;
+      let lowOcrQuality = false;
 
       if (docCount > 0) {
-        const retrieval = await retrievalService.retrieve(normalizedMessage, {
-          topK: parsePositiveInteger(retrievalTopK, 6),
-          similarityThreshold,
-          userId: normalizedUserId,
-          conversationId: conversation.id
-        });
+        const docs = await conversationDocumentRepository.listByConversation(conversation.id, normalizedUserId);
+        const anyProcessing = docs.some(d => d.status && !['ready', 'failed'].includes(d.status));
+        const anyLowQuality = docs.some(d => d.status === 'ready' && d.ocrQuality !== null && d.ocrQuality < OCR_QUALITY_THRESHOLD);
+        let matchedDoc = null;
 
-        sources = retrieval.retrievedContext ?? [];
+        if (isSummaryQuery) {
+          matchedDoc = findMatchingDocument(normalizedMessage, docs);
+          console.log('[DOC MATCH]', {
+            query: normalizedMessage,
+            availableDocs: docs.map((d) => ({
+              id: d.id,
+              fileName: d.fileName
+            })),
+            matchedDoc: matchedDoc
+              ? {
+                  id: matchedDoc.id,
+                  fileName: matchedDoc.fileName
+                }
+              : null,
+            explicitDocMatch,
+            followUpMatch
+          });
+        }
+
+        if (matchedDoc && matchedDoc.status && matchedDoc.status !== 'ready') {
+          const message = matchedDoc.status === 'failed'
+            ? 'This document failed to process. Please re-upload it.'
+            : 'This document is still being processed. Please try again in a moment.';
+
+          await conversationRepository.appendConversationTurnForUser({
+            conversationId: conversation.id,
+            userId: normalizedUserId,
+            userMessage: normalizedMessage,
+            assistantMessage: message,
+            assistantSources: [],
+          });
+
+          if (conversation.title === UNTITLED_THREAD) {
+            const title = generateTitle(normalizedMessage);
+            await conversationRepository.updateConversationTitleForUser(conversation.id, title, normalizedUserId);
+          }
+
+          return {
+            conversationId: conversation.id,
+            answer: message,
+            sources: []
+          };
+        }
+
+        if (!matchedDoc && history.length > 0) {
+          const lastRef = getLastReferencedDocument(history, docs);
+          if (lastRef && normalizedMessage.split(/\s+/).length < 12) {
+            matchedDoc = lastRef;
+            followUpMatch = true;
+          }
+        }
+
+        if (matchedDoc) {
+          if (isSummaryQuery) {
+            if (matchedDoc.ocrQuality !== null && matchedDoc.ocrQuality < OCR_QUALITY_THRESHOLD) {
+              lowOcrQuality = true;
+            } else {
+              explicitDocMatch = true;
+            }
+          }
+        }
+
+        if (matchedDoc && !lowOcrQuality) {
+          console.log('[DOC CHUNKS REQUEST]', {
+            documentId: matchedDoc?.id,
+            fileName: matchedDoc?.fileName
+          });
+          const chunkResult = await chunkService.listDocumentChunks(matchedDoc.id);
+          const chunks = chunkResult?.chunks ?? [];
+          sources = chunks.slice(0, 20).map((c) => ({
+            chunkId: c.id,
+            documentId: c.documentId,
+            chunkIndex: c.chunkIndex,
+            similarity: 1.0,
+            chunkText: c.content,
+            fileName: matchedDoc.fileName
+          }));
+          console.log('[DOC CHUNKS RESULT]', {
+            fileName: matchedDoc?.fileName,
+            chunkCount: sources.length,
+            firstChunk: sources[0]?.chunkText?.slice(0, 150) ?? '(empty)'
+          });
+        } else {
+          const retrieval = await retrievalService.retrieve(normalizedMessage, {
+            topK: parsePositiveInteger(retrievalTopK, 6),
+            similarityThreshold,
+            userId: normalizedUserId,
+            conversationId: conversation.id
+          });
+
+          sources = retrieval.retrievedContext ?? [];
+        }
       }
 
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
-      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.50 && overlapCount >= 1;
+      const shouldUseRag = explicitDocMatch || (followUpMatch ? overlapCount >= 1 : (sources.length > 0 && topSimilarity >= 0.50));
 
-      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
-      const isSummary = isSummaryQuery && docCount > 0;
+      const isSummary = isSummaryQuery && (docCount > 0 || explicitDocMatch);
 
       if (sources.length > 0) {
         sources.forEach((chunk, index) => {
-          console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
-            index,
-            chunk.fileName || '?',
-            chunk.similarity || 0,
-            (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
+              index,
+              chunk.fileName || '?',
+              chunk.similarity || 0,
+              (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+          }
         });
       }
 
@@ -250,16 +386,19 @@ export function createChatService({
       let prompt;
       let activeSources;
 
-      if (shouldUseRag) {
+      if (shouldUseRag && !lowOcrQuality) {
         prompt = isSummary
           ? buildSummaryChatPrompt({ question: normalizedMessage, history, retrievedContext: sources })
           : buildChatPrompt({ question: normalizedMessage, history, retrievedContext: sources });
         activeSources = sources;
-      } else if (isSummary) {
+      } else if (isSummary && (lowOcrQuality || anyLowQuality)) {
         prompt = buildLowQualityOcrPrompt({
           question: normalizedMessage,
           history
         });
+        activeSources = [];
+      } else if (isSummary && anyProcessing) {
+        prompt = buildProcessingPrompt();
         activeSources = [];
       } else {
         prompt = buildFallbackChatPrompt({
@@ -274,11 +413,13 @@ export function createChatService({
         const userMsg = prompt.messages.find((m) => m.role === 'user');
         const contextMsgs = prompt.messages.filter((m) => m.role === 'system' && m.content.includes('[Chunk'));
 
-        console.log('[SUMMARY PROMPT PREVIEW]');
-        console.log('system:', (systemMsg?.content || '').slice(0, 500));
-        console.log('user:', (userMsg?.content || '').slice(0, 500));
-        console.log('contextBlocks:', contextMsgs.length);
-        console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[SUMMARY PROMPT PREVIEW]');
+          console.log('system:', (systemMsg?.content || '').slice(0, 500));
+          console.log('user:', (userMsg?.content || '').slice(0, 500));
+          console.log('contextBlocks:', contextMsgs.length);
+          console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
+        }
       }
 
       const generation = await generationService.generateFromPrompt({
@@ -338,33 +479,121 @@ export function createChatService({
 
       const docCount = await conversationDocumentRepository.countByConversation(conversation.id, normalizedUserId);
 
+      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
+
       let sources = [];
+      let explicitDocMatch = false;
+      let followUpMatch = false;
+      let lowOcrQuality = false;
 
       if (docCount > 0) {
-        const retrieval = await retrievalService.retrieve(normalizedMessage, {
-          topK: parsePositiveInteger(retrievalTopK, 6),
-          similarityThreshold,
-          userId: normalizedUserId,
-          conversationId: conversation.id
-        });
+        const docs = await conversationDocumentRepository.listByConversation(conversation.id, normalizedUserId);
+        const anyProcessing = docs.some(d => d.status && !['ready', 'failed'].includes(d.status));
+        const anyLowQuality = docs.some(d => d.status === 'ready' && d.ocrQuality !== null && d.ocrQuality < OCR_QUALITY_THRESHOLD);
+        let matchedDoc = null;
 
-        sources = retrieval.retrievedContext ?? [];
+        if (isSummaryQuery) {
+          matchedDoc = findMatchingDocument(normalizedMessage, docs);
+          console.log('[DOC MATCH]', {
+            query: normalizedMessage,
+            availableDocs: docs.map((d) => ({
+              id: d.id,
+              fileName: d.fileName
+            })),
+            matchedDoc: matchedDoc
+              ? {
+                  id: matchedDoc.id,
+                  fileName: matchedDoc.fileName
+                }
+              : null,
+            explicitDocMatch,
+            followUpMatch
+          });
+        }
+
+        if (matchedDoc && matchedDoc.status && matchedDoc.status !== 'ready') {
+          const message = matchedDoc.status === 'failed'
+            ? 'This document failed to process. Please re-upload it.'
+            : 'This document is still being processed. Please try again in a moment.';
+
+          async function* singleMessageStream() {
+            yield message;
+          }
+
+          return {
+            conversationId: conversation.id,
+            sources: [],
+            isNewConversation: conversation.title === UNTITLED_THREAD,
+            normalizedMessage,
+            stream: singleMessageStream()
+          };
+        }
+
+        if (!matchedDoc && history.length > 0) {
+          const lastRef = getLastReferencedDocument(history, docs);
+          if (lastRef && normalizedMessage.split(/\s+/).length < 12) {
+            matchedDoc = lastRef;
+            followUpMatch = true;
+          }
+        }
+
+        if (matchedDoc) {
+          if (isSummaryQuery) {
+            if (matchedDoc.ocrQuality !== null && matchedDoc.ocrQuality < OCR_QUALITY_THRESHOLD) {
+              lowOcrQuality = true;
+            } else {
+              explicitDocMatch = true;
+            }
+          }
+        }
+
+        if (matchedDoc && !lowOcrQuality) {
+          console.log('[DOC CHUNKS REQUEST]', {
+            documentId: matchedDoc?.id,
+            fileName: matchedDoc?.fileName
+          });
+          const chunkResult = await chunkService.listDocumentChunks(matchedDoc.id);
+          const chunks = chunkResult?.chunks ?? [];
+          sources = chunks.slice(0, 20).map((c) => ({
+            chunkId: c.id,
+            documentId: c.documentId,
+            chunkIndex: c.chunkIndex,
+            similarity: 1.0,
+            chunkText: c.content,
+            fileName: matchedDoc.fileName
+          }));
+          console.log('[DOC CHUNKS RESULT]', {
+            fileName: matchedDoc?.fileName,
+            chunkCount: sources.length,
+            firstChunk: sources[0]?.chunkText?.slice(0, 150) ?? '(empty)'
+          });
+        } else {
+          const retrieval = await retrievalService.retrieve(normalizedMessage, {
+            topK: parsePositiveInteger(retrievalTopK, 6),
+            similarityThreshold,
+            userId: normalizedUserId,
+            conversationId: conversation.id
+          });
+
+          sources = retrieval.retrievedContext ?? [];
+        }
       }
 
       const topSimilarity = sources.length > 0 ? sources[0].similarity : 0;
       const overlapCount = sources.length > 0 ? computeOverlap(normalizedMessage, sources) : 0;
-      const shouldUseRag = sources.length > 0 && topSimilarity >= 0.50 && overlapCount >= 1;
+      const shouldUseRag = explicitDocMatch || (followUpMatch ? overlapCount >= 1 : (sources.length > 0 && topSimilarity >= 0.50));
 
-      const isSummaryQuery = isDocumentSummaryQuery(normalizedMessage);
-      const isSummary = isSummaryQuery && docCount > 0;
+      const isSummary = isSummaryQuery && (docCount > 0 || explicitDocMatch);
 
       if (sources.length > 0) {
         sources.forEach((chunk, index) => {
-          console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
-            index,
-            chunk.fileName || '?',
-            chunk.similarity || 0,
-            (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
+              index,
+              chunk.fileName || '?',
+              chunk.similarity || 0,
+              (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
+          }
         });
       }
 
@@ -380,16 +609,19 @@ export function createChatService({
       let prompt;
       let activeSources;
 
-      if (shouldUseRag) {
+      if (shouldUseRag && !lowOcrQuality) {
         prompt = isSummary
           ? buildSummaryChatPrompt({ question: normalizedMessage, history, retrievedContext: sources })
           : buildChatPrompt({ question: normalizedMessage, history, retrievedContext: sources });
         activeSources = sources;
-      } else if (isSummary) {
+      } else if (isSummary && (lowOcrQuality || anyLowQuality)) {
         prompt = buildLowQualityOcrPrompt({
           question: normalizedMessage,
           history
         });
+        activeSources = [];
+      } else if (isSummary && anyProcessing) {
+        prompt = buildProcessingPrompt();
         activeSources = [];
       } else {
         prompt = buildFallbackChatPrompt({
@@ -404,11 +636,13 @@ export function createChatService({
         const userMsg = prompt.messages.find((m) => m.role === 'user');
         const contextMsgs = prompt.messages.filter((m) => m.role === 'system' && m.content.includes('[Chunk'));
 
-        console.log('[SUMMARY PROMPT PREVIEW]');
-        console.log('system:', (systemMsg?.content || '').slice(0, 500));
-        console.log('user:', (userMsg?.content || '').slice(0, 500));
-        console.log('contextBlocks:', contextMsgs.length);
-        console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[SUMMARY PROMPT PREVIEW]');
+          console.log('system:', (systemMsg?.content || '').slice(0, 500));
+          console.log('user:', (userMsg?.content || '').slice(0, 500));
+          console.log('contextBlocks:', contextMsgs.length);
+          console.log('contextPreview:', (contextMsgs.map((m) => m.content).join('\n') || '').slice(0, 1000));
+        }
       }
 
       const stream = generationService.generateStreamFromPrompt({

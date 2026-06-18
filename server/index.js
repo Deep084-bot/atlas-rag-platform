@@ -12,7 +12,7 @@ console.log("EMBEDDING_PROVIDER:", process.env.EMBEDDING_PROVIDER);
 
 const port = Number(process.env.PORT ?? 8787);
 
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   console.log(`Atlas API listening on http://localhost:${port}`);
 
   try {
@@ -21,4 +21,29 @@ app.listen(port, async () => {
   } catch (err) {
     console.error('[reconcile] Failed:', err.message);
   }
+});
+
+function shutdown(signal) {
+  console.log('[atlas] %s received, shutting down gracefully', signal);
+  server.close(() => {
+    console.log('[atlas] HTTP server closed');
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error('[atlas] forced shutdown after timeout');
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[atlas] Unhandled Rejection:', reason instanceof Error ? reason.stack : reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[atlas] Uncaught Exception:', error.stack);
+  process.exit(1);
 });
