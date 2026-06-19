@@ -98,7 +98,7 @@ export function sendChatMessageStream({ conversationId, message, signal, onMeta,
       signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    fetch('/api/chat/stream', {
+    fetch(buildUrl('/api/chat/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

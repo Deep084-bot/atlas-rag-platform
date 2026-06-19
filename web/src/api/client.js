@@ -1,8 +1,9 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
 
-function buildUrl(path) {
+export function buildUrl(path) {
   return `${apiBaseUrl}${path}`;
 }
+import { requestJson, buildUrl } from './client.js';
 
 async function parseResponse(response) {
   const contentType = response.headers.get('content-type') ?? '';
