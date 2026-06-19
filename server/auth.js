@@ -88,6 +88,7 @@ const trustedFrontendOrigin = process.env.WEB_ORIGIN ?? "http://localhost:5173";
 export const auth = betterAuth({
   baseURL: authServerBaseURL,
   secret: process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET,
+
   database: drizzleAdapter(authDb, {
     provider: "pg",
     schema: {
@@ -97,11 +98,20 @@ export const auth = betterAuth({
       verification,
     },
   }),
+
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
   },
+
   trustedOrigins: [trustedFrontendOrigin],
+
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+    },
+  },
 });
 
 export const authHandler = toNodeHandler(auth);
