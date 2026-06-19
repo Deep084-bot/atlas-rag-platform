@@ -3,7 +3,6 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
 export function buildUrl(path) {
   return `${apiBaseUrl}${path}`;
 }
-import { requestJson, buildUrl } from './client.js';
 
 async function parseResponse(response) {
   const contentType = response.headers.get('content-type') ?? '';
@@ -11,9 +10,12 @@ async function parseResponse(response) {
   const payload = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message = typeof payload === 'string'
-      ? payload
-      : payload?.message ?? payload?.error ?? `Request failed with status ${response.status}`;
+    const message =
+      typeof payload === 'string'
+        ? payload
+        : payload?.message ??
+          payload?.error ??
+          `Request failed with status ${response.status}`;
 
     const error = new Error(message);
     error.status = response.status;
@@ -24,7 +26,10 @@ async function parseResponse(response) {
   return payload;
 }
 
-export async function requestJson(path, { method = 'GET', body, signal } = {}) {
+export async function requestJson(
+  path,
+  { method = 'GET', body, signal } = {}
+) {
   const options = {
     method,
     signal,

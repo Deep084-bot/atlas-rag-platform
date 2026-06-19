@@ -1,4 +1,4 @@
-import { requestJson } from './client.js';
+import { requestJson, buildUrl } from './client.js';
 
 export async function uploadDocument({ file, userId, conversationId }) {
   const formData = new FormData();
