@@ -1,0 +1,37 @@
+{
+  "title": "Atlas",
+  "subtitle": "A personal knowledge platform for PDF and TXT ingestion, semantic search, and citation-aware chat",
+  "featured": false,
+  "status": "Active",
+  "year": 2026,
+  "category": "Full-Stack",
+  "difficulty": "",
+  "github": "https://github.com/Deep084-bot/atlas-rag-platform",
+  "live": "",
+  "cover": "assets/cover.png",
+  "architecture": "assets/architecture.png",
+  "writeupsFolder": "writeups",
+  "docsFolder": "docs",
+  "tech": [
+    "React",
+    "Vite",
+    "TailwindCSS",
+    "Node.js",
+    "Express.js",
+    "Neon PostgreSQL",
+    "pgvector",
+    "Groq",
+    "tesseract.js",
+    "pdfjs-dist",
+    "better-auth",
+    "drizzle-orm"
+  ],
+  "summary": "A personal knowledge platform for PDF and TXT ingestion, semantic search, and citation-aware chat.",
+  "highlights": [
+    "PDF and TXT document ingestion pipeline with OCR fallback for scanned documents",
+    "Semantic search using pgvector-powered embeddings",
+    "Citation-aware chat with RAG routing and SSE streaming",
+    "Authentication with Better Auth"
+  ],
+  "learning": []
+}
