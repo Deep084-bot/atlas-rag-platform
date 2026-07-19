@@ -1,10 +1,10 @@
 {
   "title": "Atlas",
   "slug": "atlas",
+  "shortDescription": "Production-grade Retrieval-Augmented Generation platform with OCR pipeline, pgvector semantic search, streaming citation-aware generation, and modular backend.",
   "featured": true,
   "priority": 2,
   "status": "In Development",
-  "shortDescription": "Production-grade Retrieval-Augmented Generation platform with OCR pipeline, pgvector semantic search, streaming citation-aware generation, and modular backend.",
   "tags": [
     "Backend",
     "AI",
@@ -24,6 +24,15 @@
     "React",
     "TypeScript"
   ],
+  "images": {
+    "thumbnail": "/images/projects/atlas.png",
+    "hero": null
+  },
+  "links": {
+    "github": "https://github.com/Deep084-bot/atlas-rag-platform",
+    "demo": null,
+    "blog": null
+  },
   "overview": {
     "problem": "Traditional search and Q&A systems lack document-grounded, citation-aware responses. Users need answers that are verifiable against source material, not black-box LLM outputs.",
     "solution": "Atlas ingests documents through an OCR pipeline, generates vector embeddings, stores them in pgvector for semantic search, and serves citation-grounded answers with streaming responses. A modular backend separates ingestion, retrieval, generation, and authentication layers."
@@ -45,13 +54,5 @@
     "Custom embedding fine-tuning for domain corpora",
     "Collaborative document collections with shared access control",
     "Real-time document update and re-indexing pipeline"
-  ],
-  "images": {
-    "thumbnail": null,
-    "hero": null
-  },
-  "links": {
-    "github": "https://github.com/Deep084-bot/atlas-rag-platform",
-    "demo": null
-  }
+  ]
 }
