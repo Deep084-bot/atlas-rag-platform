@@ -1,37 +1,57 @@
 {
   "title": "Atlas",
-  "subtitle": "A personal knowledge platform for PDF and TXT ingestion, semantic search, and citation-aware chat",
-  "featured": false,
-  "status": "Active",
-  "year": 2026,
-  "category": "Full-Stack",
-  "difficulty": "",
-  "github": "https://github.com/Deep084-bot/atlas-rag-platform",
-  "live": "",
-  "cover": "assets/cover.png",
-  "architecture": "assets/architecture.png",
-  "writeupsFolder": "writeups",
-  "docsFolder": "docs",
+  "slug": "atlas",
+  "featured": true,
+  "priority": 2,
+  "status": "In Development",
+  "shortDescription": "Production-grade Retrieval-Augmented Generation platform with OCR pipeline, pgvector semantic search, streaming citation-aware generation, and modular backend.",
+  "tags": [
+    "Backend",
+    "AI",
+    "RAG",
+    "Semantic Search",
+    "OCR"
+  ],
   "tech": [
-    "React",
-    "Vite",
-    "TailwindCSS",
-    "Node.js",
-    "Express.js",
-    "Neon PostgreSQL",
+    "OCR Pipeline",
     "pgvector",
-    "Groq",
-    "tesseract.js",
-    "pdfjs-dist",
-    "better-auth",
-    "drizzle-orm"
+    "Better Auth",
+    "Semantic Search",
+    "Streaming Responses",
+    "Citation-Aware AI",
+    "Vector Embeddings",
+    "Modular Backend",
+    "React",
+    "TypeScript"
   ],
-  "summary": "A personal knowledge platform for PDF and TXT ingestion, semantic search, and citation-aware chat.",
-  "highlights": [
-    "PDF and TXT document ingestion pipeline with OCR fallback for scanned documents",
-    "Semantic search using pgvector-powered embeddings",
-    "Citation-aware chat with RAG routing and SSE streaming",
-    "Authentication with Better Auth"
+  "overview": {
+    "problem": "Traditional search and Q&A systems lack document-grounded, citation-aware responses. Users need answers that are verifiable against source material, not black-box LLM outputs.",
+    "solution": "Atlas ingests documents through an OCR pipeline, generates vector embeddings, stores them in pgvector for semantic search, and serves citation-grounded answers with streaming responses. A modular backend separates ingestion, retrieval, generation, and authentication layers."
+  },
+  "details": {
+    "architecture": "Modular FastAPI backend with distinct ingestion, retrieval, generation, and auth services. OCR pipeline normalizes scanned documents before vector embedding. pgvector enables efficient hybrid search combining dense and sparse retrieval. Better Auth handles session and API key management. Streaming responses deliver citation-aware AI outputs in real time. React frontend provides the user interface.",
+    "technicalChallenges": [
+      "Designing a modular architecture where ingestion, retrieval, and generation can scale independently",
+      "Building an OCR pipeline that normalizes diverse document formats into clean text",
+      "Implementing hybrid search (dense + sparse) over pgvector for optimal relevance",
+      "Streaming citation-grounded responses without breaking the document context window",
+      "Managing authentication across modular services without coupling"
+    ],
+    "learnings": "Explored RAG architecture patterns, embedding strategies for domain-specific retrieval, streaming response design, and modular backend decomposition for AI systems."
+  },
+  "futureImprovements": [
+    "Multi-modal retrieval supporting images and tables",
+    "Document analytics dashboard with usage insights",
+    "Custom embedding fine-tuning for domain corpora",
+    "Collaborative document collections with shared access control",
+    "Real-time document update and re-indexing pipeline"
   ],
-  "learning": []
+  "images": {
+    "thumbnail": null,
+    "hero": null
+  },
+  "links": {
+    "github": "https://github.com/Deep084-bot/atlas-rag-platform",
+    "demo": null
+  }
 }
