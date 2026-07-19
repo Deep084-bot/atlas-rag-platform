@@ -15,11 +15,11 @@ export function getPool() {
     return null;
   }
 
+  const useSsl = process.env.DATABASE_SSL !== 'false';
+
   pool = new Pool({
     connectionString: databaseUrl,
-    ssl: {
-      rejectUnauthorized: false,
-    },
+    ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
   return pool;

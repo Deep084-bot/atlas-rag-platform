@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-atlas}
+      POSTGRES_USER: ${POSTGRES_USER:-atlas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas}
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 8787
+      DATABASE_URL: postgresql://${POSTGRES_USER:-atlas}:${POSTGRES_PASSWORD:-atlas}@postgres:5432/${POSTGRES_DB:-atlas}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_TEMPERATURE: ${GROQ_TEMPERATURE:-0}
+      GROQ_MAX_TOKENS: ${GROQ_MAX_TOKENS:-512}
+      BETTER_AUTH_URL: http://localhost:8787
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      WEB_ORIGIN: http://localhost:5173
+      HF_API_KEY: ${HF_API_KEY}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-huggingface}
+      GENERATION_TOP_K: ${GENERATION_TOP_K:-6}
+      GENERATION_SIMILARITY_THRESHOLD: ${GENERATION_SIMILARITY_THRESHOLD:-0.5}
+      MAX_OCR_FILE_SIZE_MB: ${MAX_OCR_FILE_SIZE_MB:-15}
+      DATABASE_SSL: false
+      GENERATION_PROVIDER: ${GENERATION_PROVIDER:-groq}
+    volumes:
+      - ./server:/app/server:delegated
+      - ./api:/app/api:delegated
+      - ./database:/app/database:delegated
+      - ./package.json:/app/package.json:delegated
+      - uploads_dev:/app/uploads
+    ports:
+      - "8787:8787"
+    command: ["node", "--watch", "server/index.js"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8787
+    volumes:
+      - ./web:/app/web:delegated
+      - ./package.json:/app/package.json:delegated
+      - ./tailwind.config.cjs:/app/tailwind.config.cjs:delegated
+      - ./postcss.config.cjs:/app/postcss.config.cjs:delegated
+      - ./vite.config.js:/app/vite.config.js:delegated
+    ports:
+      - "5173:5173"
+    command: ["npm", "run", "dev:web"]
+
+volumes:
+  postgres_data_dev:
+  uploads_dev:
