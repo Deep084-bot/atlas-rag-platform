@@ -34,14 +34,66 @@ a {
   text-decoration: none;
 }
 
-button,
-input,
-textarea,
-select {
+button, input, textarea, select {
   font: inherit;
 }
 
 ::selection {
   background: rgba(72, 215, 200, 0.28);
   color: #f8fbff;
+}
+
+:focus-visible {
+  outline: 2px solid #48d7c8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@layer utilities {
+  .bg-glass {
+    background: rgba(8, 19, 33, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .bg-glass-light {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .section-container {
+    @apply mx-auto max-w-7xl px-6 lg:px-8;
+  }
+
+  .section-header {
+    @apply mx-auto max-w-2xl text-center;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-atlas-teal to-atlas-sky bg-clip-text text-transparent;
+  }
+}
+
+@layer components {
+  .mockup-window {
+    @apply overflow-hidden rounded-xl bg-[#0a1628] shadow-dashboard;
+  }
 }
