@@ -6,6 +6,7 @@ import { DocsPage } from './pages/DocsPage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { SignupPage } from './pages/SignupPage.jsx';
 import { WorkspacePage } from './pages/WorkspacePage.jsx';
+import { CustomCursor } from './components/CustomCursor.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { GuestRoute } from './components/GuestRoute.jsx';
@@ -13,6 +14,7 @@ import { GuestRoute } from './components/GuestRoute.jsx';
 export default function App() {
   return (
     <>
+      <CustomCursor />
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<LandingPage />} />

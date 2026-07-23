@@ -21,8 +21,8 @@ export function Navbar() {
   const isWorkspace = location.pathname === '/app';
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-white/[0.04] bg-[#06111f]/70 backdrop-blur-2xl">
-      <div className="section-container flex items-center justify-between py-4">
+    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.04] bg-[#06111f]/70 backdrop-blur-2xl">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link
           to="/"
           className="flex items-center gap-2.5 text-sm font-bold tracking-[0.18em] text-white/90 transition hover:text-white"

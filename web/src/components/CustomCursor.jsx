@@ -10,6 +10,8 @@ export function CustomCursor() {
   const expandedRef = useRef(false);
 
   useEffect(() => {
+    document.documentElement.style.cursor = 'none';
+
     function onMouseMove(e) {
       posRef.current = { x: e.clientX, y: e.clientY };
       if (!visible) setVisible(true);
@@ -49,6 +51,7 @@ export function CustomCursor() {
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
+      document.documentElement.style.cursor = '';
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseleave', onMouseLeave);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);

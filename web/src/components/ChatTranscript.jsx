@@ -1,7 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import { SourcesList } from './SourcesList.jsx';
+
+const LOADING_MESSAGES = [
+  'Searching your knowledge base...',
+  'Retrieving relevant documents...',
+  'Analyzing document context...',
+  'Ranking results by relevance...',
+  'Generating citation-backed answer...',
+  'Fact-checking against sources...',
+  'Polishing the response...',
+];
 
 function MarkdownContent({ content }) {
   return (
@@ -47,12 +57,24 @@ function MarkdownContent({ content }) {
 }
 
 function StreamingIndicator() {
+  const [loadingIndex, setLoadingIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLoadingIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <span className="mt-3 inline-flex items-center gap-1">
-      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:0ms]" />
-      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:150ms]" />
-      <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:300ms]" />
-    </span>
+    <div className="mt-3 space-y-2">
+      <p className="text-xs text-slate-500 italic transition-opacity duration-300">{LOADING_MESSAGES[loadingIndex]}</p>
+      <span className="inline-flex items-center gap-1">
+        <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:0ms]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:150ms]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-atlas-teal/60 [animation-delay:300ms]" />
+      </span>
+    </div>
   );
 }
 

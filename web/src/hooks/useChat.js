@@ -34,6 +34,7 @@ export function useChat() {
   const [conversationDocumentsLoading, setConversationDocumentsLoading] = useState(false);
   const [conversationDocumentsError, setConversationDocumentsError] = useState('');
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+  const [attachedCollectionIds, setAttachedCollectionIds] = useState([]);
 
   const activeRequestRef = useRef('');
   const abortControllerRef = useRef(null);
@@ -49,6 +50,46 @@ export function useChat() {
   const mountedRef = useRef(false);
   const documentsRequestRef = useRef(0);
   const conversationsRequestRef = useRef(0);
+
+  const COLLECTION_ATTACH_KEY = 'atlas_conv_collections';
+
+  function loadCollectionAttachments(conversationId) {
+    if (!conversationId) return [];
+    try {
+      const raw = localStorage.getItem(COLLECTION_ATTACH_KEY);
+      const data = raw ? JSON.parse(raw) : {};
+      return data[conversationId] ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveCollectionAttachments(conversationId, ids) {
+    if (!conversationId) return;
+    try {
+      const raw = localStorage.getItem(COLLECTION_ATTACH_KEY);
+      const data = raw ? JSON.parse(raw) : {};
+      data[conversationId] = ids;
+      localStorage.setItem(COLLECTION_ATTACH_KEY, JSON.stringify(data));
+    } catch {}
+  }
+
+  function addAttachedCollectionId(collectionId) {
+    setAttachedCollectionIds((prev) => {
+      if (prev.includes(collectionId)) return prev;
+      const next = [...prev, collectionId];
+      saveCollectionAttachments(activeRequestRef.current, next);
+      return next;
+    });
+  }
+
+  function removeAttachedCollectionId(collectionId) {
+    setAttachedCollectionIds((prev) => {
+      const next = prev.filter((id) => id !== collectionId);
+      saveCollectionAttachments(activeRequestRef.current, next);
+      return next;
+    });
+  }
 
   function hasProcessingDocuments(docs) {
     return docs.some((d) => POLLING_STATUSES.has(d.status));
@@ -190,6 +231,7 @@ export function useChat() {
     setIsCreatingConversation(false);
     setMessages([]);
     setConversationDocuments([]);
+    setAttachedCollectionIds(loadCollectionAttachments(id));
     setMessagesLoading(true);
     setConversationDocumentsLoading(true);
     setMessagesError('');
@@ -330,6 +372,7 @@ export function useChat() {
       setStatus('success');
 
       if (newConversationId) {
+        activeRequestRef.current = newConversationId;
         setActiveConversationId(newConversationId);
         setIsCreatingConversation(false);
         await fetchConversations(true);
@@ -384,6 +427,7 @@ export function useChat() {
     setIsCreatingConversation(true);
     setMessages([]);
     setConversationDocuments([]);
+    setAttachedCollectionIds([]);
     setMessage('');
     setStatus('idle');
     setError('');
@@ -432,6 +476,7 @@ export function useChat() {
     const wasActive = id === activeConversationId;
     const previous = conversations;
     const previousDocs = conversationDocuments;
+    const previousCollectionIds = attachedCollectionIds;
 
     setConversations((prev) => prev.filter((c) => c.id !== id));
 
@@ -454,10 +499,30 @@ export function useChat() {
         setActiveConversationId(id);
         setIsCreatingConversation(false);
         setConversationDocuments(previousDocs);
+        setAttachedCollectionIds(previousCollectionIds);
       }
     } finally {
       deletingConversationRef.current = false;
     }
+  }
+
+  function addCoffeeMessage() {
+    const coffeeMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: '☕',
+      sources: [],
+    };
+    setMessages((current) => [...current, coffeeMessage]);
+    const response = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: 'Here you go — ☕\n\nEnjoy your coffee! (This is just a little easter egg. 😄)',
+      sources: [],
+    };
+    setTimeout(() => {
+      setMessages((current) => [...current, response]);
+    }, 500);
   }
 
   return {
@@ -487,6 +552,10 @@ export function useChat() {
     fetchConversationDocuments,
     attachDocument,
     detachDocument,
+    addCoffeeMessage,
+    attachedCollectionIds,
+    addAttachedCollectionId,
+    removeAttachedCollectionId,
     isLoading: status === 'loading' || status === 'streaming',
   };
 }

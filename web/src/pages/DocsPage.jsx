@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navbar } from '../components/Navbar.jsx';
+import { LandingNavbar } from '../components/LandingNavbar.jsx';
 import { Footer } from '../components/Footer.jsx';
 
 const sections = [
@@ -476,7 +476,7 @@ export function DocsPage() {
 
   return (
     <>
-      <Navbar />
+      <LandingNavbar />
       <div className="flex min-h-[calc(100vh-73px)]">
         <SidebarNav activeSection={activeSection} onNavigate={setActiveSection} />
         <main className="min-w-0 flex-1 overflow-y-auto">
