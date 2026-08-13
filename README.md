@@ -45,7 +45,7 @@ Built with a monolith-first architecture — one backend, one database, one depl
 | Database | PostgreSQL 16 + pgvector |
 | Authentication | Better Auth (email/password) |
 | Embeddings | HuggingFace Inference API (`BAAI/bge-small-en-v1.5`) |
-| LLM | Groq (`llama-3.1-70b-versatile`) |
+| LLM | Groq (`openai/gpt-oss-20b`) |
 | OCR | pdfjs-dist + @napi-rs/canvas + tesseract.js |
 | Deployment | Frontend: Vercel / Backend: Render / DB: Neon |
 | Containerization | Docker (multi-stage, docker-compose) |

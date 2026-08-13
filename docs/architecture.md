@@ -453,7 +453,7 @@ All explanations are based on evidence found in the codebase:
 
 - **Neon PostgreSQL + pgvector** — The database is PostgreSQL with the pgvector extension for vector similarity search. Connection is via a connection pool in `server/db.js`. The `vectors` extension is enabled in `schema.sql` and vector(384) columns power semantic search via an HNSW index with cosine distance.
 
-- **Groq** — The sole LLM provider for chat generation. The `GroqProvider.js` implements both synchronous generation and SSE streaming. Model name is configurable via `GROQ_MODEL` env var (default `llama-3.1-70b-versatile`, overridden to `llama-3.1-8b-instant` in the current .env).
+- **Groq** — The sole LLM provider for chat generation. The `GroqProvider.js` implements both synchronous generation and SSE streaming. Model name is configurable via `GROQ_MODEL` env var (default `openai/gpt-oss-20b`, overridden to `openai/gpt-oss-20b` in the current .env).
 
 - **Better Auth** — Chosen for authentication with email/password. Integrated via Drizzle ORM adapter for PostgreSQL. The setup creates its own schema (`better_auth`) separate from the application schema.
 

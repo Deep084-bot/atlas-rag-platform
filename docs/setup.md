@@ -49,7 +49,7 @@ Then edit `.env.local` with your own credentials.
 
 | Variable | Source | Default | Description |
 |----------|--------|---------|-------------|
-| `GROQ_MODEL` | `server/generation/config.js:25` | `llama-3.1-70b-versatile` | Groq model ID for chat. Current `.env` overrides to `llama-3.1-8b-instant`. |
+| `GROQ_MODEL` | `server/generation/config.js:25` | `openai/gpt-oss-20b` | Groq model ID for chat. Current `.env` overrides to `openai/gpt-oss-20b`. |
 | `GROQ_BASE_URL` | `server/generation/config.js:26` | `https://api.groq.com/openai/v1` | Groq API base URL. Change for proxy or self-hosted endpoints. |
 | `GROQ_TEMPERATURE` | `server/generation/config.js:29` | `0` | LLM temperature (0-2). |
 | `GROQ_MAX_TOKENS` | `server/generation/config.js:30` | `512` | Maximum tokens per generation. |

@@ -22,7 +22,7 @@ export function createGenerationConfig(env = process.env) {
   return {
     providerName: (env.GENERATION_PROVIDER ?? 'groq').toLowerCase(),
     groqApiKey: env.GROQ_API_KEY ?? '',
-    groqModel: env.GROQ_MODEL ?? 'llama-3.1-70b-versatile',
+    groqModel: env.GROQ_MODEL ?? 'openai/gpt-oss-20b',
     groqBaseUrl: env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1',
     retrievalTopK: parsePositiveInteger(env.GENERATION_TOP_K, 6),
     retrievalSimilarityThreshold: parseNumber(env.GENERATION_SIMILARITY_THRESHOLD, 0.5),

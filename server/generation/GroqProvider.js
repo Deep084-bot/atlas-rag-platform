@@ -40,7 +40,8 @@ export class GroqProvider extends GenerationProvider {
         model: this.model,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        max_completion_tokens: maxTokens,
+        include_reasoning: false,
         stream: false
       })
     }, {
@@ -108,7 +109,8 @@ export class GroqProvider extends GenerationProvider {
         model: this.model,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        max_completion_tokens: maxTokens,
+        include_reasoning: false,
         stream: true
       }),
       signal
