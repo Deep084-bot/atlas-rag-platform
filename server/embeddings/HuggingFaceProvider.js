@@ -4,6 +4,7 @@ import { fetchWithRetry } from '../http/fetchWithRetry.js';
 
 const DEFAULT_MODEL = 'BAAI/bge-small-en-v1.5';
 const DEFAULT_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
+const DEFAULT_DIMENSIONS = 384;
 
 function isNumberVector(value) {
     return Array.isArray(value) && value.every((item) => typeof item === 'number');
@@ -33,8 +34,11 @@ function averageVectors(vectors) {
 function normalizeVector(vector) {
     const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + (value * value), 0));
 
-    if (magnitude === 0) {
-        return vector;
+    if (magnitude === 0 || !Number.isFinite(magnitude) || magnitude < 1e-10) {
+        throw new ProviderError('Hugging Face returned invalid embedding values.', {
+            provider: 'Hugging Face',
+            statusCode: 502
+        });
     }
 
     return vector.map((value) => value / magnitude);
@@ -42,27 +46,26 @@ function normalizeVector(vector) {
 
 function normalizeEmbeddingOutput(output, textsCount = 1) {
     if (!Array.isArray(output) || output.length === 0) {
-        return [];
+        throw new ProviderError('Hugging Face returned an empty embedding.', {
+            provider: 'Hugging Face',
+            statusCode: 502
+        });
+    }
+
+    if (isNumberVector(output)) {
+        return [normalizeVector(output.map((value) => Number(value)))];
     }
 
     if (isBatchMatrix(output)) {
-        return output.map((item) => normalizeEmbeddingOutput(item, 1));
+        return output.map((item) => normalizeEmbeddingOutput(item, 1)[0]);
     }
 
     if (isTokenMatrix(output)) {
         if (textsCount > 1 && output.length === textsCount) {
-            return output.map((vector) =>
-                normalizeVector(
-                    vector.map((value) => Number(value))
-                )
-            );
+            return output.map((vector) => normalizeVector(vector.map((value) => Number(value))));
         }
 
-        return normalizeVector(averageVectors(output));
-    }
-
-    if (isNumberVector(output)) {
-        return normalizeVector(output.map((value) => Number(value)));
+        return [normalizeVector(averageVectors(output))];
     }
 
     throw new ProviderError('Unexpected embedding response format from Hugging Face.', {
@@ -72,16 +75,23 @@ function normalizeEmbeddingOutput(output, textsCount = 1) {
 }
 
 export class HuggingFaceProvider extends EmbeddingProvider {
-    constructor({ apiKey, model = DEFAULT_MODEL, baseUrl = DEFAULT_BASE_URL } = {}) {
+    constructor({ apiKey, model = DEFAULT_MODEL, baseUrl = DEFAULT_BASE_URL, dimensions = DEFAULT_DIMENSIONS } = {}) {
         super();
         this.apiKey = apiKey;
         this.model = model;
         this.baseUrl = baseUrl;
+        this.dimensions = dimensions;
     }
 
     async embed(text) {
         const embeddings = await this.embedMany([text]);
-        return embeddings[0] ?? [];
+        if (!embeddings || embeddings.length === 0) {
+            throw new ProviderError('Hugging Face returned empty embedding.', {
+                provider: 'Hugging Face',
+                statusCode: 502
+            });
+        }
+        return embeddings[0];
     }
 
     async embedMany(texts) {
@@ -114,6 +124,24 @@ export class HuggingFaceProvider extends EmbeddingProvider {
             retries: 2
         });
 
+        if (!response.ok) {
+            let errorText = '';
+
+            try {
+                errorText = await response.text();
+            } catch {
+                errorText = response.statusText ?? '';
+            }
+
+            const detail = errorText ? `: ${errorText.slice(0, 300)}` : '';
+
+            throw new ProviderError(`Hugging Face request failed with status ${response.status}${detail}`, {
+                provider: 'Hugging Face',
+                statusCode: 502,
+                retryable: response.status >= 500
+            });
+        }
+
         let payload;
 
         try {
@@ -127,13 +155,36 @@ export class HuggingFaceProvider extends EmbeddingProvider {
         }
         const normalized = normalizeEmbeddingOutput(payload, texts.length);
 
-        if (texts.length === 1 && Array.isArray(normalized) && normalized.length > 0 && typeof normalized[0] === 'number') {
-            return [normalized];
+        if (!Array.isArray(normalized) || normalized.length !== texts.length) {
+            throw new ProviderError('Hugging Face returned an unexpected number of embeddings.', {
+                provider: 'Hugging Face',
+                statusCode: 502
+            });
         }
-        console.log("texts count:", texts.length);
-        console.log("payload sample:", JSON.stringify(payload).slice(0,500));
-        console.log("normalized type:", Array.isArray(normalized));
-        console.log("normalized length:", normalized.length);
+
+        for (const vec of normalized) {
+            if (!Array.isArray(vec) || vec.length === 0) {
+                throw new ProviderError('Hugging Face returned an empty embedding.', {
+                    provider: 'Hugging Face',
+                    statusCode: 502
+                });
+            }
+
+            if (!vec.every((item) => Number.isFinite(item))) {
+                throw new ProviderError('Hugging Face returned invalid embedding values.', {
+                    provider: 'Hugging Face',
+                    statusCode: 502
+                });
+            }
+
+            if (Number.isFinite(this.dimensions) && this.dimensions > 0 && vec.length !== this.dimensions) {
+                throw new ProviderError('Hugging Face returned embedding with unexpected dimensions.', {
+                    provider: 'Hugging Face',
+                    statusCode: 502
+                });
+            }
+        }
+
         return normalized;
     }
 }

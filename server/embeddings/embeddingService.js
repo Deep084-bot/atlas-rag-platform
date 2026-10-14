@@ -1,3 +1,7 @@
+import { ProviderError } from '../errors.js';
+
+const EMBEDDING_DIMENSIONS = 384;
+
 export function createEmbeddingService({ documentsRepository, embeddingRepository, embeddingProvider, batchSize = 8 }) {
   return {
     async embedDocument(documentId) {
@@ -23,12 +27,34 @@ export function createEmbeddingService({ documentsRepository, embeddingRepositor
         const embeddings = await embeddingProvider.embedMany(batch.map((chunk) => chunk.content));
 
         if (!Array.isArray(embeddings) || embeddings.length !== batch.length) {
-          throw new Error('Embedding provider returned an unexpected number of embeddings.');
+          throw new ProviderError('Embedding provider returned an unexpected number of embeddings.', {
+            provider: 'Embedding provider',
+            statusCode: 502
+          });
         }
 
         for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
           const chunk = batch[batchIndex];
           const embedding = embeddings[batchIndex];
+
+          if (!Array.isArray(embedding) || embedding.length === 0) {
+            throw new ProviderError('Embedding provider returned an empty embedding.', {
+              provider: 'Embedding provider',
+              statusCode: 502
+            });
+          }
+          if (!embedding.every((item) => Number.isFinite(item))) {
+            throw new ProviderError('Embedding provider returned invalid embedding values.', {
+              provider: 'Embedding provider',
+              statusCode: 502
+            });
+          }
+          if (embedding.length !== EMBEDDING_DIMENSIONS) {
+            throw new ProviderError('Embedding provider returned embedding with unexpected dimensions.', {
+              provider: 'Embedding provider',
+              statusCode: 502
+            });
+          }
 
           await embeddingRepository.updateChunkEmbedding(chunk.id, embedding);
           embeddedChunks += 1;

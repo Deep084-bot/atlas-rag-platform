@@ -6,6 +6,28 @@ const OCR_TEXT_MIN_LENGTH = 50;
 const MAX_OCR_PAGES = 10;
 const MAX_OCR_FILE_SIZE = (Number.parseInt(process.env.MAX_OCR_FILE_SIZE_MB, 10) || 15) * 1024 * 1024;
 const OCR_QUALITY_THRESHOLD = 0.30;
+const MAX_FAILURE_REASON_LENGTH = 300;
+
+function sanitizeFailureReason(error) {
+  const raw = error instanceof Error && typeof error.message === 'string'
+    ? error.message
+    : 'Document ingestion failed.';
+
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleaned.length === 0) {
+    return 'Document ingestion failed.';
+  }
+
+  if (cleaned.length > MAX_FAILURE_REASON_LENGTH) {
+    return `${cleaned.slice(0, MAX_FAILURE_REASON_LENGTH - 1).trimEnd()}…`;
+  }
+
+  return cleaned;
+}
 
 const DICTIONARY = new Set([
   'the', 'be', 'to', 'of', 'and', 'a', 'an', 'in', 'is', 'it',
@@ -192,7 +214,7 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
           progress: 100
         });
       } catch (error) {
-        const failureReason = error instanceof Error ? error.message : 'Document ingestion failed.';
+        const failureReason = sanitizeFailureReason(error);
 
         try {
           return await documentsRepository.markFailed(documentId, {

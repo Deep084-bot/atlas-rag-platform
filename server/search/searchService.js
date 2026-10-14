@@ -1,4 +1,6 @@
-import { ValidationError } from '../errors.js';
+import { ProviderError, ValidationError } from '../errors.js';
+
+const EMBEDDING_DIMENSIONS = 384;
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -30,7 +32,22 @@ export function createSearchService({ embeddingProvider, searchRepository, defau
       const queryEmbedding = await embeddingProvider.embed(normalizedQuery);
 
       if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
-        throw new Error('Embedding provider returned an empty query embedding.');
+        throw new ProviderError('Embedding provider returned an empty query embedding.', {
+          provider: 'Embedding provider',
+          statusCode: 502
+        });
+      }
+      if (!queryEmbedding.every((item) => Number.isFinite(item))) {
+        throw new ProviderError('Embedding provider returned invalid query embedding values.', {
+          provider: 'Embedding provider',
+          statusCode: 502
+        });
+      }
+      if (queryEmbedding.length !== EMBEDDING_DIMENSIONS) {
+        throw new ProviderError('Embedding provider returned query embedding with unexpected dimensions.', {
+          provider: 'Embedding provider',
+          statusCode: 502
+        });
       }
 
       const matches = await searchRepository.searchChunksByEmbeddingForUser({
