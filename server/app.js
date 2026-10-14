@@ -14,8 +14,7 @@ import { ChunkRepository } from './ingestion/chunkRepository.js';
 import { createChunkService } from './ingestion/chunkService.js';
 import { EmbeddingRepository } from './embeddings/embeddingRepository.js';
 import { createEmbeddingService } from './embeddings/embeddingService.js';
-import { HuggingFaceProvider } from './embeddings/HuggingFaceProvider.js';
-import { LocalTransformersProvider } from './embeddings/LocalTransformersProvider.js';
+import { createEmbeddingProvider } from './embeddings/createEmbeddingProvider.js';
 import { LocalStorageProvider } from './storage/local.js';
 import { ConversationRepository } from './chat/conversationRepository.js';
 import { ConversationDocumentRepository } from './chat/conversationDocumentRepository.js';
@@ -59,14 +58,7 @@ const conversationDocumentRepository = new ConversationDocumentRepository(pool);
 const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
 const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, ocrService: { ocrPdf } });
-const embeddingProviderName = (process.env.EMBEDDING_PROVIDER ?? 'huggingface').toLowerCase();
-const embeddingProvider =
-  embeddingProviderName === 'local' || embeddingProviderName === 'local-transformers'
-    ? new LocalTransformersProvider()
-    : new HuggingFaceProvider({
-        apiKey: process.env.HF_API_KEY,
-        model: 'BAAI/bge-small-en-v1.5'
-      });
+const embeddingProvider = createEmbeddingProvider();
 const embeddingService = createEmbeddingService({
   documentsRepository,
   embeddingRepository,

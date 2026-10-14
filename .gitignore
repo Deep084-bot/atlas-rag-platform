@@ -4,6 +4,7 @@ web/dist
 server/dist
 .env
 .env.*
+!.env.example
 *.log
 coverage
 .DS_Store
