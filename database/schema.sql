@@ -46,6 +46,53 @@ CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
 CREATE INDEX IF NOT EXISTS chunks_created_at_idx ON chunks (created_at DESC);
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx ON chunks USING hnsw (embedding vector_cosine_ops);
 
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+  chunk_id uuid NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+  document_id uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  space_id text NOT NULL,
+  embedding vector(1024) NOT NULL,
+  l2_norm double precision NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (chunk_id, space_id)
+);
+
+CREATE INDEX IF NOT EXISTS chunk_embeddings_doc_idx
+  ON chunk_embeddings (document_id, space_id);
+
+CREATE INDEX IF NOT EXISTS chunk_embeddings_voyage_hnsw
+  ON chunk_embeddings USING hnsw (embedding vector_cosine_ops)
+  WHERE space_id = 'voyage-4-lite-query-document-l2-1024-v1';
+
+CREATE TABLE IF NOT EXISTS embedding_backfill_progress (
+  space_id              text NOT NULL,
+  document_id           uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  status                text NOT NULL DEFAULT 'pending',
+  expected_chunk_count  integer NOT NULL DEFAULT 0,
+  completed_chunk_count integer NOT NULL DEFAULT 0,
+  token_count           integer NOT NULL DEFAULT 0,
+  tokens_available      boolean NOT NULL DEFAULT false,
+  attempts              integer NOT NULL DEFAULT 0,
+  last_error            text,
+  started_at            timestamptz,
+  completed_at          timestamptz,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (space_id, document_id),
+  CONSTRAINT embedding_backfill_progress_status_check
+    CHECK (status IN ('pending', 'in_progress', 'completed', 'failed')),
+  CONSTRAINT embedding_backfill_progress_counts_check
+    CHECK (
+      expected_chunk_count >= 0
+      AND completed_chunk_count >= 0
+      AND token_count >= 0
+      AND attempts >= 0
+    )
+);
+
+CREATE INDEX IF NOT EXISTS embedding_backfill_progress_status_idx
+  ON embedding_backfill_progress (space_id, status);
+
 -- Conversation tables are retained in schema form for future generation-layer conversation storage.
 CREATE TABLE IF NOT EXISTS chat_threads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

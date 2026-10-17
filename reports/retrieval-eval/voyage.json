@@ -1,0 +1,1299 @@
+{
+  "target": "localhost:5432/atlas_rag_staging",
+  "source": "shadow",
+  "space": "voyage-4-lite-query-document-l2-1024-v1",
+  "spaceConfig": {
+    "id": "voyage-4-lite-query-document-l2-1024-v1",
+    "kind": "voyage",
+    "model": "voyage-4-lite",
+    "dimensions": 1024,
+    "normalization": "l2"
+  },
+  "topK": 5,
+  "cases": [
+    {
+      "id": "return-window-answerable",
+      "kind": "answerable",
+      "query": "How many days do I have to return an item?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 1,
+          "similarity": 0.5958,
+          "head": "Atlas Return Policy. This document describes the return and "
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.5555,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 2,
+          "similarity": 0.546,
+          "head": "hown on your carrier tracking record. The item must be in it"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 5,
+          "similarity": 0.5429,
+          "head": "about a specific return can be sent to returns@atlas.example"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 4,
+          "similarity": 0.4924,
+          "head": "estored to a new digital gift card. Exchanges are treated as"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "restocking-fee-answerable",
+      "kind": "answerable",
+      "query": "Is there a restocking fee and how much is it?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 3,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.4306,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.3166,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 2,
+          "similarity": 0.2916,
+          "head": "hown on your carrier tracking record. The item must be in it"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 4,
+          "similarity": 0.2638,
+          "head": "estored to a new digital gift card. Exchanges are treated as"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 3,
+          "similarity": 0.2275,
+          "head": " to addresses in the United States, Canada, the United Kingd"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "free-shipping-threshold-answerable",
+      "kind": "answerable",
+      "query": "Above what order value is standard shipping free?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.5801,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 2,
+          "similarity": 0.3672,
+          "head": "onal fee and typically arrives in two business days, while o"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 3,
+          "similarity": 0.3126,
+          "head": " to addresses in the United States, Canada, the United Kingd"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 4,
+          "similarity": 0.3037,
+          "head": "rked delivered but you cannot find it, please check with nei"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.2944,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "warranty-length-answerable",
+      "kind": "answerable",
+      "query": "How long is the Atlas hardware warranty?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 1,
+          "similarity": 0.6731,
+          "head": "Atlas Limited Warranty. This document sets out the coverage "
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 3,
+          "similarity": 0.5015,
+          "head": "completed within ten business days of the unit arriving at t"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 2,
+          "similarity": 0.4722,
+          "head": " accidents, spills, unauthorised repairs, normal cosmetic we"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 1,
+          "similarity": 0.4478,
+          "head": "Atlas Return Policy. This document describes the return and "
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 5,
+          "similarity": 0.4396,
+          "head": "about a specific return can be sent to returns@atlas.example"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "hq-city-answerable",
+      "kind": "answerable",
+      "query": "Which city is Atlas headquartered in?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.5978,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 3,
+          "similarity": 0.4821,
+          "head": "ess and partnership enquiries go to hello@atlas.example. We "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.4518,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 1,
+          "similarity": 0.3861,
+          "head": "Atlas Security Overview. All customer documents are encrypte"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 2,
+          "similarity": 0.3665,
+          "head": "onal fee and typically arrives in two business days, while o"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "pricing-free-plan-answerable",
+      "kind": "answerable",
+      "query": "What does the free Starter plan include?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.484,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 2,
+          "similarity": 0.2807,
+          "head": "estion quotas do not roll over between billing periods. Annu"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.2623,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 3,
+          "similarity": 0.236,
+          "head": "completed within ten business days of the unit arriving at t"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 1,
+          "similarity": 0.1966,
+          "head": "Atlas Limited Warranty. This document sets out the coverage "
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "pricing-team-cost-answerable",
+      "kind": "answerable",
+      "query": "How much does the Team plan cost?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.5596,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 2,
+          "similarity": 0.4292,
+          "head": "estion quotas do not roll over between billing periods. Annu"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.2838,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 3,
+          "similarity": 0.2496,
+          "head": "completed within ten business days of the unit arriving at t"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.2154,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "pricing-overage-answerable",
+      "kind": "answerable",
+      "query": "How much are extra questions charged when I exceed my quota?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+            "chunkIndex": 2,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 2,
+          "similarity": 0.573,
+          "head": "estion quotas do not roll over between billing periods. Annu"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.438,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.2916,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.2246,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 3,
+          "similarity": 0.1905,
+          "head": "completed within ten business days of the unit arriving at t"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "security-encryption-answerable",
+      "kind": "answerable",
+      "query": "How is my data encrypted?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 1,
+          "similarity": 0.546,
+          "head": "Atlas Security Overview. All customer documents are encrypte"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.338,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 2,
+          "similarity": 0.3033,
+          "head": "rity keys and is reviewed quarterly. To report a vulnerabili"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 4,
+          "similarity": 0.2455,
+          "head": " a third party; details are shown at checkout. Proof of purc"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.1685,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "security-regions-answerable",
+      "kind": "answerable",
+      "query": "Where is customer data stored?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 1,
+          "similarity": 0.4104,
+          "head": "Atlas Security Overview. All customer documents are encrypte"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 4,
+          "similarity": 0.306,
+          "head": " a third party; details are shown at checkout. Proof of purc"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.278,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 3,
+          "similarity": 0.2084,
+          "head": " to addresses in the United States, Canada, the United Kingd"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.1987,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 1,
+      "recallAtK": 1,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "contact-support-ambiguous",
+      "kind": "ambiguous",
+      "query": "How can I contact Atlas support?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+            "chunkIndex": 2,
+            "grade": 2
+          },
+          {
+            "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+            "chunkIndex": 2,
+            "grade": 2
+          },
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 4,
+            "grade": 1
+          },
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 5,
+            "grade": 1
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.6433,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "c7904a7a-70be-4a79-81ea-274ac1996589",
+          "chunkIndex": 1,
+          "similarity": 0.5519,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "31077d67-5e53-420b-bb67-a1a0c1c3b327",
+          "chunkIndex": 1,
+          "similarity": 0.5519,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "c65f097d-b982-4cee-99ad-bab8f75f01c7",
+          "chunkIndex": 1,
+          "similarity": 0.5512,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "8cdc274a-9179-423e-b47e-6f4afa71c77c",
+          "chunkIndex": 1,
+          "similarity": 0.5512,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 4,
+      "recallAtK": 0.25,
+      "precisionAtK": 0.2,
+      "mrr": 1,
+      "ndcgAtK": 0.5152,
+      "hitAtK": true,
+      "passed": false
+    },
+    {
+      "id": "fees-ambiguous",
+      "kind": "ambiguous",
+      "query": "What fees or surcharges might I be charged?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 3,
+            "grade": 2
+          },
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 4,
+            "grade": 1
+          },
+          {
+            "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+            "chunkIndex": 1,
+            "grade": 2
+          },
+          {
+            "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+            "chunkIndex": 3,
+            "grade": 1
+          },
+          {
+            "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+            "chunkIndex": 2,
+            "grade": 1
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.2873,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 2,
+          "similarity": 0.2755,
+          "head": "estion quotas do not roll over between billing periods. Annu"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.2617,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 4,
+          "similarity": 0.2125,
+          "head": " a third party; details are shown at checkout. Proof of purc"
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.2097,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 5,
+      "recallAtK": 0.6,
+      "precisionAtK": 0.6,
+      "mrr": 1,
+      "ndcgAtK": 0.8262,
+      "hitAtK": true,
+      "passed": false
+    },
+    {
+      "id": "return-steps-and-refund-timing-cross-chunk",
+      "kind": "cross-chunk",
+      "query": "How do I start a return, and how long until I get my refund?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 2,
+            "grade": 3
+          },
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 3,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 2,
+          "similarity": 0.5044,
+          "head": "hown on your carrier tracking record. The item must be in it"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.4973,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 5,
+          "similarity": 0.4586,
+          "head": "about a specific return can be sent to returns@atlas.example"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 1,
+          "similarity": 0.4476,
+          "head": "Atlas Return Policy. This document describes the return and "
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 4,
+          "similarity": 0.4149,
+          "head": "estored to a new digital gift card. Exchanges are treated as"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 2,
+      "recallAtK": 1,
+      "precisionAtK": 0.4,
+      "mrr": 1,
+      "ndcgAtK": 1,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "international-return-cross-chunk",
+      "kind": "cross-chunk",
+      "query": "For an international order, are duties refunded and what is the return window?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 4,
+            "grade": 3
+          },
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 1,
+            "grade": 2
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 4,
+          "similarity": 0.5173,
+          "head": "estored to a new digital gift card. Exchanges are treated as"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 3,
+          "similarity": 0.4961,
+          "head": " to addresses in the United States, Canada, the United Kingd"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 2,
+          "similarity": 0.4624,
+          "head": "hown on your carrier tracking record. The item must be in it"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.4509,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 1,
+          "similarity": 0.43,
+          "head": "Atlas Return Policy. This document describes the return and "
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 2,
+      "recallAtK": 1,
+      "precisionAtK": 0.4,
+      "mrr": 1,
+      "ndcgAtK": 0.9177,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "return-window-and-hq-cross-document",
+      "kind": "cross-document",
+      "query": "What is the return window and where is Atlas headquartered?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+            "chunkIndex": 1,
+            "grade": 3
+          },
+          {
+            "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 5,
+          "similarity": 0.483,
+          "head": "about a specific return can be sent to returns@atlas.example"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 1,
+          "similarity": 0.4786,
+          "head": "Atlas Return Policy. This document describes the return and "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.4651,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 2,
+          "similarity": 0.4351,
+          "head": "hown on your carrier tracking record. The item must be in it"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.4305,
+          "head": "t teams work together in a single office. Our mission is to "
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 2,
+      "recallAtK": 1,
+      "precisionAtK": 0.4,
+      "mrr": 0.5,
+      "ndcgAtK": 0.6934,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "shipping-and-warranty-cross-document",
+      "kind": "cross-document",
+      "query": "Is shipping free over a threshold and how long is the warranty?",
+      "cachedQueryVector": true,
+      "expected": {
+        "relevance": [
+          {
+            "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+            "chunkIndex": 1,
+            "grade": 3
+          },
+          {
+            "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+            "chunkIndex": 1,
+            "grade": 3
+          }
+        ],
+        "documentIds": [],
+        "chunkIndices": []
+      },
+      "top": [
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 1,
+          "similarity": 0.4452,
+          "head": "Atlas Shipping Policy. This document explains how orders are"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 3,
+          "similarity": 0.374,
+          "head": "completed within ten business days of the unit arriving at t"
+        },
+        {
+          "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+          "chunkIndex": 2,
+          "similarity": 0.3327,
+          "head": "onal fee and typically arrives in two business days, while o"
+        },
+        {
+          "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+          "chunkIndex": 1,
+          "similarity": 0.3146,
+          "head": "Atlas Limited Warranty. This document sets out the coverage "
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 3,
+          "similarity": 0.2948,
+          "head": "nal shipping charges, and we cover the cost of the return sh"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "recall",
+      "relevantCount": 2,
+      "recallAtK": 1,
+      "precisionAtK": 0.4,
+      "mrr": 1,
+      "ndcgAtK": 0.8772,
+      "hitAtK": true,
+      "passed": true
+    },
+    {
+      "id": "unanswerable-ceo-colour",
+      "kind": "unanswerable",
+      "query": "What is the favourite colour of the Atlas chief executive officer?",
+      "cachedQueryVector": true,
+      "expected": {
+        "noAnswer": true,
+        "threshold": null
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 3,
+          "similarity": 0.3076,
+          "head": "ess and partnership enquiries go to hello@atlas.example. We "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.2901,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.2881,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        },
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 1,
+          "similarity": 0.2636,
+          "head": "Atlas Security Overview. All customer documents are encrypte"
+        },
+        {
+          "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+          "chunkIndex": 5,
+          "similarity": 0.2454,
+          "head": "about a specific return can be sent to returns@atlas.example"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "no-answer",
+      "topSimilarity": 0.3076,
+      "threshold": null,
+      "passed": false,
+      "separated": false,
+      "minAnswerableTop1": 0.2873
+    },
+    {
+      "id": "unanswerable-ceo-name",
+      "kind": "unanswerable",
+      "query": "What is the name of the Atlas chief executive officer?",
+      "cachedQueryVector": true,
+      "expected": {
+        "noAnswer": true,
+        "threshold": null
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 3,
+          "similarity": 0.4332,
+          "head": "ess and partnership enquiries go to hello@atlas.example. We "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.4134,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.3862,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "31077d67-5e53-420b-bb67-a1a0c1c3b327",
+          "chunkIndex": 1,
+          "similarity": 0.3339,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "c7904a7a-70be-4a79-81ea-274ac1996589",
+          "chunkIndex": 1,
+          "similarity": 0.3339,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "no-answer",
+      "topSimilarity": 0.4332,
+      "threshold": null,
+      "passed": false,
+      "separated": false,
+      "minAnswerableTop1": 0.2873
+    },
+    {
+      "id": "unanswerable-employee-count",
+      "kind": "unanswerable",
+      "query": "How many employees work at Atlas in total?",
+      "cachedQueryVector": true,
+      "expected": {
+        "noAnswer": true,
+        "threshold": null
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 3,
+          "similarity": 0.4655,
+          "head": "ess and partnership enquiries go to hello@atlas.example. We "
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 1,
+          "similarity": 0.4357,
+          "head": "About Atlas. Atlas builds tools that help teams find, unders"
+        },
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.4276,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+          "chunkIndex": 1,
+          "similarity": 0.3606,
+          "head": "Atlas Pricing. Atlas offers three plans. The Starter plan is"
+        },
+        {
+          "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+          "chunkIndex": 1,
+          "similarity": 0.324,
+          "head": "Atlas Security Overview. All customer documents are encrypte"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "no-answer",
+      "topSimilarity": 0.4655,
+      "threshold": null,
+      "passed": false,
+      "separated": false,
+      "minAnswerableTop1": 0.2873
+    },
+    {
+      "id": "unanswerable-support-phone",
+      "kind": "unanswerable",
+      "query": "What is the Atlas customer support phone number?",
+      "cachedQueryVector": true,
+      "expected": {
+        "noAnswer": true,
+        "threshold": null
+      },
+      "top": [
+        {
+          "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+          "chunkIndex": 2,
+          "similarity": 0.5812,
+          "head": "t teams work together in a single office. Our mission is to "
+        },
+        {
+          "documentId": "c7904a7a-70be-4a79-81ea-274ac1996589",
+          "chunkIndex": 1,
+          "similarity": 0.5418,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "31077d67-5e53-420b-bb67-a1a0c1c3b327",
+          "chunkIndex": 1,
+          "similarity": 0.5418,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "c65f097d-b982-4cee-99ad-bab8f75f01c7",
+          "chunkIndex": 1,
+          "similarity": 0.541,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        },
+        {
+          "documentId": "8cdc274a-9179-423e-b47e-6f4afa71c77c",
+          "chunkIndex": 1,
+          "similarity": 0.541,
+          "head": "Atlas Escalation Policy. When a customer issue cannot be res"
+        }
+      ],
+      "returnedSpaces": [
+        "voyage-4-lite-query-document-l2-1024-v1"
+      ],
+      "type": "no-answer",
+      "topSimilarity": 0.5812,
+      "threshold": null,
+      "passed": false,
+      "separated": false,
+      "minAnswerableTop1": 0.2873
+    }
+  ],
+  "metrics": {
+    "cases": 20,
+    "recallCases": 16,
+    "noAnswerCases": 4,
+    "cachedQueryVectors": 20,
+    "recallAtK": 0.9281,
+    "precisionAtK": 0.275,
+    "mrr": 0.9688,
+    "ndcgAtK": 0.9269,
+    "hitRateAtK": 1,
+    "answerableTop1Min": 0.2873,
+    "answerableTop1Max": 0.6731,
+    "noAnswerTop1": 0.3076,
+    "noAnswerTop1Max": 0.5812,
+    "noAnswerSeparated": false,
+    "noAnswerMargin": -0.2939,
+    "noAnswerFalsePositiveRate": null,
+    "perKind": {
+      "answerable": {
+        "count": 10,
+        "passed": 10,
+        "recallAtK": 1,
+        "ndcgAtK": 1,
+        "mrr": 1
+      },
+      "ambiguous": {
+        "count": 2,
+        "passed": 0,
+        "recallAtK": 0.425,
+        "ndcgAtK": 0.6707,
+        "mrr": 1
+      },
+      "cross-chunk": {
+        "count": 2,
+        "passed": 2,
+        "recallAtK": 1,
+        "ndcgAtK": 0.9588,
+        "mrr": 1
+      },
+      "cross-document": {
+        "count": 2,
+        "passed": 2,
+        "recallAtK": 1,
+        "ndcgAtK": 0.7853,
+        "mrr": 0.75
+      },
+      "unanswerable": {
+        "count": 4,
+        "passed": 0,
+        "recallAtK": null,
+        "ndcgAtK": null,
+        "mrr": null
+      }
+    },
+    "failures": [
+      "contact-support-ambiguous",
+      "fees-ambiguous",
+      "unanswerable-ceo-colour",
+      "unanswerable-ceo-name",
+      "unanswerable-employee-count",
+      "unanswerable-support-phone"
+    ]
+  },
+  "allSingleSpace": true,
+  "passed": false
+}

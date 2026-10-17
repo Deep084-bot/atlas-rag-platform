@@ -327,6 +327,17 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         });
       }
 
+      if (typeof documentOrchestrator?.reembedDocument === 'function') {
+        const reembedded = await documentOrchestrator.reembedDocument(request.params.id);
+
+        return response.json({
+          ...result,
+          status: reembedded?.status ?? null,
+          progress: reembedded?.progress ?? null,
+          failureReason: reembedded?.failureReason ?? null
+        });
+      }
+
       return response.json(result);
     } catch (error) {
       const classified = classifyError(error);

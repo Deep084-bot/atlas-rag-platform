@@ -1,0 +1,209 @@
+{
+  "description": "Representative retrieval-evaluation dataset for the BGE(384) vs Voyage(1024) comparison. Documents marked \"action\": \"reuse\" already exist in the staging DB and are NOT modified; documents marked \"action\": \"seed\" are new and added by scripts/dev/seed-eval-corpus.mjs. Cases carry exact text markers (and grades) so labels resolve deterministically to concrete (documentId, chunkIndex) pairs. Covers answerable, ambiguous/multi-answer, cross-chunk, cross-document, and unanswerable queries.",
+  "status": "active",
+  "chunking": { "chunkSize": 500, "overlap": 100 },
+  "documents": [
+    {
+      "id": "a1a1a1a1-1111-4111-8111-111111111111",
+      "fileName": "return-policy.txt",
+      "action": "reuse",
+      "text": "Atlas Return Policy. This document describes the return and refund rules that apply to every product ordered directly from the Atlas store. We want customers to feel confident when they shop with us, so we keep the process as simple and transparent as possible. Overview: If you are not fully satisfied with a purchase, you may request a return within thirty (30) calendar days of the delivery date shown on your carrier tracking record. The item must be in its original condition, including all packaging, manuals, and accessories, unless it arrived damaged. To begin, open the Orders page in your Atlas account, select the item, and choose Request Return. You will receive a prepaid label by email within one business day. Damaged or defective goods are always refunded in full, including any original shipping charges, and we cover the cost of the return shipment. For all other returns, a restocking fee of fifteen percent of the item price is deducted from the refund to cover inspection and repackaging. Refunds are issued to the original payment method and typically settle within five to seven business days after the warehouse confirms receipt. If you paid with a gift card, the balance is restored to a new digital gift card. Exchanges are treated as a return followed by a fresh order so that inventory and pricing remain accurate. Certain categories are final sale and cannot be returned, including perishable goods, personalized items, and digital licenses that have already been redeemed. If your order was shipped internationally, import duties and taxes are non-refundable. Questions about a specific return can be sent to returns@atlas.example and our team will respond within two business days."
+    },
+    {
+      "id": "b2b2b2b2-2222-4222-8222-222222222222",
+      "fileName": "shipping-policy.txt",
+      "action": "reuse",
+      "text": "Atlas Shipping Policy. This document explains how orders are fulfilled, how long delivery takes, and what shipping charges apply. Standard shipping is free on orders over fifty US dollars, which covers the majority of our catalog. Orders below that threshold are charged a flat rate of six dollars and ninety-nine cents for standard delivery. Expedited shipping is available at checkout for an additional fee and typically arrives in two business days, while overnight delivery is offered in select metropolitan areas. All orders placed before three in the afternoon local warehouse time are picked and packed the same day. Once your parcel leaves the warehouse you will receive a tracking number by email, and you can follow its progress from the Orders page in your Atlas account. We currently ship to addresses in the United States, Canada, the United Kingdom, and the European Union. International orders may be subject to import duties and taxes that are set by the destination country and are the responsibility of the recipient. During peak promotional periods, such as the winter sale, processing times can extend by one or two business days and we appreciate your patience. If a parcel is marked delivered but you cannot find it, please check with neighbours and your building office first, then contact shipping@atlas.example within fourteen days so we can open a carrier investigation. Lost or damaged parcels are replaced at no cost once the carrier confirms the issue. We do not currently offer delivery to PO boxes for oversized items, and some hazardous materials cannot be shipped by air."
+    },
+    {
+      "id": "c3c3c3c3-3333-4333-8333-333333333333",
+      "fileName": "warranty-policy.txt",
+      "action": "reuse",
+      "text": "Atlas Limited Warranty. This document sets out the coverage provided with every Atlas hardware product. Each new device is covered by a two-year limited warranty that begins on the date of delivery. During the coverage period, Atlas will repair or replace, at its discretion, any product that fails because of a manufacturing defect or faulty workmanship. The warranty does not cover damage caused by accidents, spills, unauthorised repairs, normal cosmetic wear, or use outside the published operating conditions. To make a claim, contact support@atlas.example with your order number and a short description of the fault. Our technicians will run a remote diagnostic and, if the issue is covered, send a prepaid shipping label so the unit can be inspected at our service centre. Covered repairs are completed within ten business days of the unit arriving at the centre. If the product cannot be repaired economically, we will issue a replacement of equal or greater specification. This limited warranty is in addition to, and does not affect, the statutory rights you have under consumer law in your country of residence. Extended protection plans can be purchased separately and are administered by a third party; details are shown at checkout. Proof of purchase is required for all claims, so please keep your order confirmation email."
+    },
+    {
+      "id": "d4d4d4d4-4444-4444-8444-444444444444",
+      "fileName": "company-info.txt",
+      "action": "reuse",
+      "text": "About Atlas. Atlas builds tools that help teams find, understand, and use the knowledge locked inside their own documents. The company was founded by a small group of engineers who were frustrated by how much time was wasted searching shared drives for information that already existed somewhere in the organisation. Atlas is headquartered in Austin, Texas, where the engineering, product, and support teams work together in a single office. Our mission is to make reliable, citation-backed answers the default way people work with internal knowledge. We care deeply about privacy, so customer documents are never used to train third-party models and are encrypted at rest and in transit. The support team can be reached at support@atlas.example on business days between nine and six Central Time. Press and partnership enquiries go to hello@atlas.example. We publish a short monthly note describing product changes, and you can subscribe from the Atlas website. Atlas is a private company and is not listed on any stock exchange. The leadership team believes in building slowly and sustainably, favouring depth of understanding over rapid, unfocused expansion. If you are interested in joining us, open roles are listed on the careers page of the Atlas website."
+    },
+    {
+      "id": "e5e5e5e5-5555-4555-8555-555555555555",
+      "fileName": "pricing.txt",
+      "action": "seed",
+      "text": "Atlas Pricing. Atlas offers three plans. The Starter plan is free forever and includes up to twenty-five documents and one hundred questions per month. The Team plan costs twenty US dollars per user per month and includes five thousand documents and ten thousand questions per month. The Enterprise plan is custom priced and adds single sign-on, audit logs, and a dedicated support channel. Unused question quotas do not roll over between billing periods. Annual billing saves two months compared to monthly billing. Overage questions are charged at two US dollars per one thousand questions. You can change plans at any time from the Billing page, and downgrades take effect at the end of the current billing period."
+    },
+    {
+      "id": "f6f6f6f6-6666-4666-8666-666666666666",
+      "fileName": "security.txt",
+      "action": "seed",
+      "text": "Atlas Security Overview. All customer documents are encrypted at rest with AES-256 and in transit with TLS one point three. Atlas does not train models on customer data. Data is stored in the region selected at signup, currently either the United States or the European Union. We are SOC two Type two compliant and publish a trust report each year. Access to production systems requires hardware security keys and is reviewed quarterly. To report a vulnerability, email security@atlas.example and we will acknowledge within one business day."
+    }
+  ],
+  "cases": [
+    {
+      "id": "return-window-answerable",
+      "kind": "answerable",
+      "query": "How many days do I have to return an item?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "thirty (30) calendar days", "grade": 3 }
+      ]
+    },
+    {
+      "id": "restocking-fee-answerable",
+      "kind": "answerable",
+      "query": "Is there a restocking fee and how much is it?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "restocking fee of fifteen percent", "grade": 3 }
+      ]
+    },
+    {
+      "id": "free-shipping-threshold-answerable",
+      "kind": "answerable",
+      "query": "Above what order value is standard shipping free?",
+      "relevance": [
+        { "documentId": "b2b2b2b2-2222-4222-8222-222222222222", "marker": "free on orders over fifty US dollars", "grade": 3 }
+      ]
+    },
+    {
+      "id": "warranty-length-answerable",
+      "kind": "answerable",
+      "query": "How long is the Atlas hardware warranty?",
+      "relevance": [
+        { "documentId": "c3c3c3c3-3333-4333-8333-333333333333", "marker": "two-year limited warranty", "grade": 3 }
+      ]
+    },
+    {
+      "id": "hq-city-answerable",
+      "kind": "answerable",
+      "query": "Which city is Atlas headquartered in?",
+      "relevance": [
+        { "documentId": "d4d4d4d4-4444-4444-8444-444444444444", "marker": "headquartered in Austin, Texas", "grade": 3 }
+      ]
+    },
+    {
+      "id": "pricing-free-plan-answerable",
+      "kind": "answerable",
+      "query": "What does the free Starter plan include?",
+      "relevance": [
+        { "documentId": "e5e5e5e5-5555-4555-8555-555555555555", "marker": "up to twenty-five documents", "grade": 3 },
+        { "documentId": "e5e5e5e5-5555-4555-8555-555555555555", "marker": "one hundred questions per month", "grade": 2 }
+      ]
+    },
+    {
+      "id": "pricing-team-cost-answerable",
+      "kind": "answerable",
+      "query": "How much does the Team plan cost?",
+      "relevance": [
+        { "documentId": "e5e5e5e5-5555-4555-8555-555555555555", "marker": "twenty US dollars per user per month", "grade": 3 }
+      ]
+    },
+    {
+      "id": "pricing-overage-answerable",
+      "kind": "answerable",
+      "query": "How much are extra questions charged when I exceed my quota?",
+      "relevance": [
+        { "documentId": "e5e5e5e5-5555-4555-8555-555555555555", "marker": "two US dollars per one thousand questions", "grade": 3 }
+      ]
+    },
+    {
+      "id": "security-encryption-answerable",
+      "kind": "answerable",
+      "query": "How is my data encrypted?",
+      "relevance": [
+        { "documentId": "f6f6f6f6-6666-4666-8666-666666666666", "marker": "encrypted at rest with AES-256", "grade": 3 },
+        { "documentId": "f6f6f6f6-6666-4666-8666-666666666666", "marker": "in transit with TLS one point three", "grade": 2 }
+      ]
+    },
+    {
+      "id": "security-regions-answerable",
+      "kind": "answerable",
+      "query": "Where is customer data stored?",
+      "relevance": [
+        { "documentId": "f6f6f6f6-6666-4666-8666-666666666666", "marker": "either the United States or the European Union", "grade": 3 }
+      ]
+    },
+    {
+      "id": "contact-support-ambiguous",
+      "kind": "ambiguous",
+      "query": "How can I contact Atlas support?",
+      "relevance": [
+        { "documentId": "c3c3c3c3-3333-4333-8333-333333333333", "marker": "contact support@atlas.example", "grade": 2 },
+        { "documentId": "d4d4d4d4-4444-4444-8444-444444444444", "marker": "support@atlas.example", "grade": 2 },
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "returns@atlas.example", "grade": 1 }
+      ]
+    },
+    {
+      "id": "fees-ambiguous",
+      "kind": "ambiguous",
+      "query": "What fees or surcharges might I be charged?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "restocking fee of fifteen percent", "grade": 2 },
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "import duties and taxes are non-refundable", "grade": 1 },
+        { "documentId": "b2b2b2b2-2222-4222-8222-222222222222", "marker": "flat rate of six dollars and ninety-nine cents", "grade": 2 },
+        { "documentId": "b2b2b2b2-2222-4222-8222-222222222222", "marker": "import duties and taxes", "grade": 1 },
+        { "documentId": "e5e5e5e5-5555-4555-8555-555555555555", "marker": "two US dollars per one thousand questions", "grade": 1 }
+      ]
+    },
+    {
+      "id": "return-steps-and-refund-timing-cross-chunk",
+      "kind": "cross-chunk",
+      "query": "How do I start a return, and how long until I get my refund?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "choose Request Return", "grade": 3 },
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "five to seven business days", "grade": 3 }
+      ]
+    },
+    {
+      "id": "international-return-cross-chunk",
+      "kind": "cross-chunk",
+      "query": "For an international order, are duties refunded and what is the return window?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "import duties and taxes are non-refundable", "grade": 3 },
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "thirty (30) calendar days", "grade": 2 }
+      ]
+    },
+    {
+      "id": "return-window-and-hq-cross-document",
+      "kind": "cross-document",
+      "query": "What is the return window and where is Atlas headquartered?",
+      "relevance": [
+        { "documentId": "a1a1a1a1-1111-4111-8111-111111111111", "marker": "thirty (30) calendar days", "grade": 3 },
+        { "documentId": "d4d4d4d4-4444-4444-8444-444444444444", "marker": "headquartered in Austin, Texas", "grade": 3 }
+      ]
+    },
+    {
+      "id": "shipping-and-warranty-cross-document",
+      "kind": "cross-document",
+      "query": "Is shipping free over a threshold and how long is the warranty?",
+      "relevance": [
+        { "documentId": "b2b2b2b2-2222-4222-8222-222222222222", "marker": "free on orders over fifty US dollars", "grade": 3 },
+        { "documentId": "c3c3c3c3-3333-4333-8333-333333333333", "marker": "two-year limited warranty", "grade": 3 }
+      ]
+    },
+    {
+      "id": "unanswerable-ceo-colour",
+      "kind": "unanswerable",
+      "query": "What is the favourite colour of the Atlas chief executive officer?",
+      "expectNoAnswer": true
+    },
+    {
+      "id": "unanswerable-ceo-name",
+      "kind": "unanswerable",
+      "query": "What is the name of the Atlas chief executive officer?",
+      "expectNoAnswer": true
+    },
+    {
+      "id": "unanswerable-employee-count",
+      "kind": "unanswerable",
+      "query": "How many employees work at Atlas in total?",
+      "expectNoAnswer": true
+    },
+    {
+      "id": "unanswerable-support-phone",
+      "kind": "unanswerable",
+      "query": "What is the Atlas customer support phone number?",
+      "expectNoAnswer": true
+    }
+  ]
+}

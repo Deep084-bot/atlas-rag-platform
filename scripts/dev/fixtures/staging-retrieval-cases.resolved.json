@@ -1,0 +1,74 @@
+[
+  {
+    "id": "return-window",
+    "kind": "factual",
+    "query": "How many days do I have to return an item I bought from Atlas?",
+    "expectedDocumentIds": [
+      "a1a1a1a1-1111-4111-8111-111111111111"
+    ],
+    "expectedChunkIndices": [
+      1
+    ]
+  },
+  {
+    "id": "restocking-fee",
+    "kind": "factual",
+    "query": "Is there a restocking fee when I send something back, and how much is it?",
+    "expectedDocumentIds": [
+      "a1a1a1a1-1111-4111-8111-111111111111"
+    ],
+    "expectedChunkIndices": [
+      3
+    ]
+  },
+  {
+    "id": "warranty-length",
+    "kind": "factual",
+    "query": "How long does the Atlas hardware warranty last?",
+    "expectedDocumentIds": [
+      "c3c3c3c3-3333-4333-8333-333333333333"
+    ],
+    "expectedChunkIndices": [
+      1
+    ]
+  },
+  {
+    "id": "free-shipping-distractor",
+    "kind": "distractor",
+    "query": "Does Atlas offer free shipping, and above what order value?",
+    "expectedDocumentIds": [
+      "b2b2b2b2-2222-4222-8222-222222222222"
+    ],
+    "expectedChunkIndices": [
+      1
+    ]
+  },
+  {
+    "id": "return-and-hq",
+    "kind": "cross-document",
+    "query": "What is the return window and where is the company headquartered?",
+    "expectedDocumentIds": [
+      "a1a1a1a1-1111-4111-8111-111111111111",
+      "d4d4d4d4-4444-4444-8444-444444444444"
+    ],
+    "expectedChunkIndices": []
+  },
+  {
+    "id": "hq-city",
+    "kind": "factual",
+    "query": "Which city is Atlas headquartered in?",
+    "expectedDocumentIds": [
+      "d4d4d4d4-4444-4444-8444-444444444444"
+    ],
+    "expectedChunkIndices": [
+      1
+    ]
+  },
+  {
+    "id": "no-answer-favorite-color",
+    "kind": "unanswerable",
+    "query": "What is the favourite colour of the Atlas chief executive officer?",
+    "expectNoAnswer": true,
+    "maxSimilarity": 0.5
+  }
+]

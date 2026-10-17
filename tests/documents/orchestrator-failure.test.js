@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createDocumentOrchestrator } from '../../server/documents/documentOrchestrator.js';
+import { ProviderError } from '../../server/errors.js';
 
 async function withTempTextFile(contents, callback) {
   const dir = await mkdtemp(join(tmpdir(), 'atlas-orch-'));
@@ -135,6 +136,51 @@ test('orchestrator sanitizes failure reason (strips control chars and caps lengt
     assert.ok(!persistedReason.includes('\n'));
     assert.ok(!persistedReason.includes('\t'));
     assert.ok(persistedReason.length <= 300);
+  });
+});
+
+test('orchestrator sanitizes hosted provider errors without leaking provider response', async () => {
+  await withTempTextFile('This is a valid text document with enough content to chunk.', async (filePath) => {
+    let persistedReason = null;
+    const docsRepo = {
+      getDocumentById: async () => ({
+        id: 'd5',
+        status: 'uploaded',
+        storagePath: filePath,
+        fileType: 'txt',
+        fileName: 'doc.txt',
+        file_size_bytes: 10
+      }),
+      updateStatus: async () => ({ id: 'd5' }),
+      updateDocumentText: async () => ({ id: 'd5' }),
+      updateOcrQuality: async () => ({ id: 'd5' }),
+      markReady: async () => ({ id: 'd5', status: 'ready' }),
+      markFailed: async (id, args) => {
+        persistedReason = args.failureReason;
+        return { id, status: 'failed', failureReason: args.failureReason };
+      }
+    };
+    const chunkService = { chunkDocument: async () => ({ chunks: [] }) };
+    const embService = {
+      embedDocument: async () => {
+        throw new ProviderError(
+          'Hugging Face request failed with status 402: {"error":"You have no remaining credits."}',
+          { provider: 'Hugging Face', statusCode: 402 }
+        );
+      }
+    };
+
+    const orch = createDocumentOrchestrator({
+      documentsRepository: docsRepo,
+      chunkService,
+      embeddingService: embService,
+      ocrService: null
+    });
+
+    await orch.processDocument('d5');
+    assert.ok(persistedReason);
+    assert.ok(!persistedReason.includes('no remaining credits'));
+    assert.ok(persistedReason.includes('status 402'));
   });
 });
 

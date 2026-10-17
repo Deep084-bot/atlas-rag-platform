@@ -1,0 +1,273 @@
+[
+  {
+    "id": "return-window-answerable",
+    "kind": "answerable",
+    "query": "How many days do I have to return an item?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "restocking-fee-answerable",
+    "kind": "answerable",
+    "query": "Is there a restocking fee and how much is it?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 3,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "free-shipping-threshold-answerable",
+    "kind": "answerable",
+    "query": "Above what order value is standard shipping free?",
+    "relevance": [
+      {
+        "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "warranty-length-answerable",
+    "kind": "answerable",
+    "query": "How long is the Atlas hardware warranty?",
+    "relevance": [
+      {
+        "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "hq-city-answerable",
+    "kind": "answerable",
+    "query": "Which city is Atlas headquartered in?",
+    "relevance": [
+      {
+        "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "pricing-free-plan-answerable",
+    "kind": "answerable",
+    "query": "What does the free Starter plan include?",
+    "relevance": [
+      {
+        "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "pricing-team-cost-answerable",
+    "kind": "answerable",
+    "query": "How much does the Team plan cost?",
+    "relevance": [
+      {
+        "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "pricing-overage-answerable",
+    "kind": "answerable",
+    "query": "How much are extra questions charged when I exceed my quota?",
+    "relevance": [
+      {
+        "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+        "chunkIndex": 2,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "security-encryption-answerable",
+    "kind": "answerable",
+    "query": "How is my data encrypted?",
+    "relevance": [
+      {
+        "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "security-regions-answerable",
+    "kind": "answerable",
+    "query": "Where is customer data stored?",
+    "relevance": [
+      {
+        "documentId": "f6f6f6f6-6666-4666-8666-666666666666",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "contact-support-ambiguous",
+    "kind": "ambiguous",
+    "query": "How can I contact Atlas support?",
+    "relevance": [
+      {
+        "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+        "chunkIndex": 2,
+        "grade": 2
+      },
+      {
+        "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+        "chunkIndex": 2,
+        "grade": 2
+      },
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 4,
+        "grade": 1
+      },
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 5,
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "fees-ambiguous",
+    "kind": "ambiguous",
+    "query": "What fees or surcharges might I be charged?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 3,
+        "grade": 2
+      },
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 4,
+        "grade": 1
+      },
+      {
+        "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+        "chunkIndex": 1,
+        "grade": 2
+      },
+      {
+        "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+        "chunkIndex": 3,
+        "grade": 1
+      },
+      {
+        "documentId": "e5e5e5e5-5555-4555-8555-555555555555",
+        "chunkIndex": 2,
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "return-steps-and-refund-timing-cross-chunk",
+    "kind": "cross-chunk",
+    "query": "How do I start a return, and how long until I get my refund?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 2,
+        "grade": 3
+      },
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 3,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "international-return-cross-chunk",
+    "kind": "cross-chunk",
+    "query": "For an international order, are duties refunded and what is the return window?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 4,
+        "grade": 3
+      },
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 1,
+        "grade": 2
+      }
+    ]
+  },
+  {
+    "id": "return-window-and-hq-cross-document",
+    "kind": "cross-document",
+    "query": "What is the return window and where is Atlas headquartered?",
+    "relevance": [
+      {
+        "documentId": "a1a1a1a1-1111-4111-8111-111111111111",
+        "chunkIndex": 1,
+        "grade": 3
+      },
+      {
+        "documentId": "d4d4d4d4-4444-4444-8444-444444444444",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "shipping-and-warranty-cross-document",
+    "kind": "cross-document",
+    "query": "Is shipping free over a threshold and how long is the warranty?",
+    "relevance": [
+      {
+        "documentId": "b2b2b2b2-2222-4222-8222-222222222222",
+        "chunkIndex": 1,
+        "grade": 3
+      },
+      {
+        "documentId": "c3c3c3c3-3333-4333-8333-333333333333",
+        "chunkIndex": 1,
+        "grade": 3
+      }
+    ]
+  },
+  {
+    "id": "unanswerable-ceo-colour",
+    "kind": "unanswerable",
+    "query": "What is the favourite colour of the Atlas chief executive officer?",
+    "expectNoAnswer": true
+  },
+  {
+    "id": "unanswerable-ceo-name",
+    "kind": "unanswerable",
+    "query": "What is the name of the Atlas chief executive officer?",
+    "expectNoAnswer": true
+  },
+  {
+    "id": "unanswerable-employee-count",
+    "kind": "unanswerable",
+    "query": "How many employees work at Atlas in total?",
+    "expectNoAnswer": true
+  },
+  {
+    "id": "unanswerable-support-phone",
+    "kind": "unanswerable",
+    "query": "What is the Atlas customer support phone number?",
+    "expectNoAnswer": true
+  }
+]

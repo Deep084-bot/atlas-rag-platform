@@ -1,0 +1,73 @@
+{
+  "description": "Synthetic corpus + retrieval cases used to validate the staging migration from BGE (384-d) to Voyage voyage-4-lite (1024-d). Seeded with real local ONNX BGE embeddings into chunks.embedding, then re-embedded into the 1024-d shadow space. Cases reference exact text markers so the seeder can resolve them to concrete chunk indices.",
+  "documents": [
+    {
+      "id": "a1a1a1a1-1111-4111-8111-111111111111",
+      "fileName": "return-policy.txt",
+      "text": "Atlas Return Policy. This document describes the return and refund rules that apply to every product ordered directly from the Atlas store. We want customers to feel confident when they shop with us, so we keep the process as simple and transparent as possible. Overview: If you are not fully satisfied with a purchase, you may request a return within thirty (30) calendar days of the delivery date shown on your carrier tracking record. The item must be in its original condition, including all packaging, manuals, and accessories, unless it arrived damaged. To begin, open the Orders page in your Atlas account, select the item, and choose Request Return. You will receive a prepaid label by email within one business day. Damaged or defective goods are always refunded in full, including any original shipping charges, and we cover the cost of the return shipment. For all other returns, a restocking fee of fifteen percent of the item price is deducted from the refund to cover inspection and repackaging. Refunds are issued to the original payment method and typically settle within five to seven business days after the warehouse confirms receipt. If you paid with a gift card, the balance is restored to a new digital gift card. Exchanges are treated as a return followed by a fresh order so that inventory and pricing remain accurate. Certain categories are final sale and cannot be returned, including perishable goods, personalized items, and digital licenses that have already been redeemed. If your order was shipped internationally, import duties and taxes are non-refundable. Questions about a specific return can be sent to returns@atlas.example and our team will respond within two business days."
+    },
+    {
+      "id": "b2b2b2b2-2222-4222-8222-222222222222",
+      "fileName": "shipping-policy.txt",
+      "text": "Atlas Shipping Policy. This document explains how orders are fulfilled, how long delivery takes, and what shipping charges apply. Standard shipping is free on orders over fifty US dollars, which covers the majority of our catalog. Orders below that threshold are charged a flat rate of six dollars and ninety-nine cents for standard delivery. Expedited shipping is available at checkout for an additional fee and typically arrives in two business days, while overnight delivery is offered in select metropolitan areas. All orders placed before three in the afternoon local warehouse time are picked and packed the same day. Once your parcel leaves the warehouse you will receive a tracking number by email, and you can follow its progress from the Orders page in your Atlas account. We currently ship to addresses in the United States, Canada, the United Kingdom, and the European Union. International orders may be subject to import duties and taxes that are set by the destination country and are the responsibility of the recipient. During peak promotional periods, such as the winter sale, processing times can extend by one or two business days and we appreciate your patience. If a parcel is marked delivered but you cannot find it, please check with neighbours and your building office first, then contact shipping@atlas.example within fourteen days so we can open a carrier investigation. Lost or damaged parcels are replaced at no cost once the carrier confirms the issue. We do not currently offer delivery to PO boxes for oversized items, and some hazardous materials cannot be shipped by air."
+    },
+    {
+      "id": "c3c3c3c3-3333-4333-8333-333333333333",
+      "fileName": "warranty-policy.txt",
+      "text": "Atlas Limited Warranty. This document sets out the coverage provided with every Atlas hardware product. Each new device is covered by a two-year limited warranty that begins on the date of delivery. During the coverage period, Atlas will repair or replace, at its discretion, any product that fails because of a manufacturing defect or faulty workmanship. The warranty does not cover damage caused by accidents, spills, unauthorised repairs, normal cosmetic wear, or use outside the published operating conditions. To make a claim, contact support@atlas.example with your order number and a short description of the fault. Our technicians will run a remote diagnostic and, if the issue is covered, send a prepaid shipping label so the unit can be inspected at our service centre. Covered repairs are completed within ten business days of the unit arriving at the centre. If the product cannot be repaired economically, we will issue a replacement of equal or greater specification. This limited warranty is in addition to, and does not affect, the statutory rights you have under consumer law in your country of residence. Extended protection plans can be purchased separately and are administered by a third party; details are shown at checkout. Proof of purchase is required for all claims, so please keep your order confirmation email."
+    },
+    {
+      "id": "d4d4d4d4-4444-4444-8444-444444444444",
+      "fileName": "company-info.txt",
+      "text": "About Atlas. Atlas builds tools that help teams find, understand, and use the knowledge locked inside their own documents. The company was founded by a small group of engineers who were frustrated by how much time was wasted searching shared drives for information that already existed somewhere in the organisation. Atlas is headquartered in Austin, Texas, where the engineering, product, and support teams work together in a single office. Our mission is to make reliable, citation-backed answers the default way people work with internal knowledge. We care deeply about privacy, so customer documents are never used to train third-party models and are encrypted at rest and in transit. The support team can be reached at support@atlas.example on business days between nine and six Central Time. Press and partnership enquiries go to hello@atlas.example. We publish a short monthly note describing product changes, and you can subscribe from the Atlas website. Atlas is a private company and is not listed on any stock exchange. The leadership team believes in building slowly and sustainably, favouring depth of understanding over rapid, unfocused expansion. If you are interested in joining us, open roles are listed on the careers page of the Atlas website."
+    }
+  ],
+  "cases": [
+    {
+      "id": "return-window",
+      "kind": "factual",
+      "query": "How many days do I have to return an item I bought from Atlas?",
+      "markers": ["thirty (30) calendar days"]
+    },
+    {
+      "id": "restocking-fee",
+      "kind": "factual",
+      "query": "Is there a restocking fee when I send something back, and how much is it?",
+      "markers": ["restocking fee of fifteen percent"]
+    },
+    {
+      "id": "warranty-length",
+      "kind": "factual",
+      "query": "How long does the Atlas hardware warranty last?",
+      "markers": ["two-year limited warranty"]
+    },
+    {
+      "id": "free-shipping-distractor",
+      "kind": "distractor",
+      "query": "Does Atlas offer free shipping, and above what order value?",
+      "markers": ["free on orders over fifty US dollars"]
+    },
+    {
+      "id": "return-and-hq",
+      "kind": "cross-document",
+      "query": "What is the return window and where is the company headquartered?",
+      "expectedDocumentIds": [
+        "a1a1a1a1-1111-4111-8111-111111111111",
+        "d4d4d4d4-4444-4444-8444-444444444444"
+      ]
+    },
+    {
+      "id": "hq-city",
+      "kind": "factual",
+      "query": "Which city is Atlas headquartered in?",
+      "markers": ["headquartered in Austin, Texas"]
+    },
+    {
+      "id": "no-answer-favorite-color",
+      "kind": "unanswerable",
+      "query": "What is the favourite colour of the Atlas chief executive officer?",
+      "expectNoAnswer": true,
+      "maxSimilarity": 0.5
+    }
+  ]
+}

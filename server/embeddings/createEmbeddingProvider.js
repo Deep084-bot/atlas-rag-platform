@@ -1,5 +1,6 @@
 import { HuggingFaceProvider } from './HuggingFaceProvider.js';
 import { LocalTransformersProvider } from './LocalTransformersProvider.js';
+import { VoyageProvider } from './VoyageProvider.js';
 import {
   EMBEDDING_MANIFEST,
   assertRuntimeConfigMatchesManifest,
@@ -38,7 +39,22 @@ export function createEmbeddingProvider({ providerName, env = process.env } = {}
       });
     }
 
+    case 'voyage': {
+      if (!env.VOYAGE_API_KEY) {
+        throw new Error('EMBEDDING_PROVIDER "voyage" requires VOYAGE_API_KEY to be set.');
+      }
+
+      return new VoyageProvider({
+        apiKey: env.VOYAGE_API_KEY,
+        model: env.VOYAGE_MODEL || 'voyage-4-lite',
+        baseUrl: env.VOYAGE_BASE_URL || 'https://api.voyageai.com/v1',
+        dimensions: Number(env.VOYAGE_OUTPUT_DIMENSION) || null,
+        inputType: env.VOYAGE_INPUT_TYPE || null,
+        normalize: parseBoolean(env.VOYAGE_NORMALIZE, true)
+      });
+    }
+
     default:
-      throw new Error(`Unsupported EMBEDDING_PROVIDER "${resolvedName}". Supported values: huggingface, local.`);
+      throw new Error(`Unsupported EMBEDDING_PROVIDER "${resolvedName}". Supported values: huggingface, local, voyage.`);
   }
 }

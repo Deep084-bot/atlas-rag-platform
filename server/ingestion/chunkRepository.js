@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { DatabaseError } from '../errors.js';
+import { lockDocumentForUpdate } from '../documents/documentLock.js';
+import { applyTransactionTimeouts } from '../db/transactionTimeouts.js';
 
 export class ChunkRepository {
   constructor(pool) {
@@ -16,6 +18,22 @@ export class ChunkRepository {
 
     try {
       await client.query('BEGIN');
+
+      // Bound the lock wait and the statements in this transaction. The document
+      // row lock is held only for the short replacement, so a wedged holder must
+      // not be allowed to pin this connection indefinitely.
+      await applyTransactionTimeouts(client);
+
+      // Serialize with any concurrent backfill completion or document deletion
+      // for the same document. If the document is already gone there is nothing
+      // to replace; roll back cleanly and report that no chunks were written.
+      const locked = await lockDocumentForUpdate(client, documentId);
+
+      if (!locked) {
+        await client.query('ROLLBACK');
+        return [];
+      }
+
       await client.query('DELETE FROM chunks WHERE document_id = $1', [documentId]);
 
       const insertedChunks = [];
@@ -37,6 +55,14 @@ export class ChunkRepository {
 
         insertedChunks.push(this.toChunkRecord(result.rows[0]));
       }
+
+      // The chunk set changed, so every embedding space's recorded progress for
+      // this document is now stale. Dropping the rows in the same transaction
+      // guarantees a completed status can never survive a replacement.
+      await client.query(
+        'DELETE FROM embedding_backfill_progress WHERE document_id = $1',
+        [documentId]
+      );
 
       await client.query('COMMIT');
       return insertedChunks;

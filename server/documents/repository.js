@@ -1,4 +1,5 @@
 import { DatabaseError } from '../errors.js';
+import { lockDocumentForUpdate } from './documentLock.js';
 
 export class DocumentsRepository {
   constructor(pool) {
@@ -216,6 +217,25 @@ export class DocumentsRepository {
     );
 
     return this.toDocumentDetails(result.rows[0] ?? null);
+  }
+
+  /**
+   * Take the per-document row lock inside the caller's transaction.
+   *
+   * Returns `{ id }` when the document exists (and is now locked for the rest
+   * of the transaction) or `null` when it is already gone. Callers should run
+   * this before any child-row write so concurrent chunk-set mutations,
+   * backfill completions, and deletions serialize on the same row.
+   */
+  async lockForUpdate(id, { client = null } = {}) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    const locked = await lockDocumentForUpdate(queryable, id);
+    return locked ? { id } : null;
   }
 
   async deleteDocumentById(id) {

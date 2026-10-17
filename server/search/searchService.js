@@ -1,6 +1,5 @@
 import { ProviderError, ValidationError } from '../errors.js';
-
-const EMBEDDING_DIMENSIONS = 384;
+import { resolveDimensionsForService } from '../embeddings/embeddingSpaces.js';
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -12,7 +11,9 @@ function parsePositiveInteger(value, fallback) {
   return parsed;
 }
 
-export function createSearchService({ embeddingProvider, searchRepository, defaultTopK = 10, maxTopK = 25 }) {
+export function createSearchService({ embeddingProvider, searchRepository, defaultTopK = 10, maxTopK = 25, dimensions } = {}) {
+  const embeddingDimensions = resolveDimensionsForService({ dimensions, provider: embeddingProvider });
+
   return {
     async search(query, { limit, userId, conversationId } = {}) {
       const normalizedQuery = typeof query === 'string' ? query.trim() : '';
@@ -43,7 +44,7 @@ export function createSearchService({ embeddingProvider, searchRepository, defau
           statusCode: 502
         });
       }
-      if (queryEmbedding.length !== EMBEDDING_DIMENSIONS) {
+      if (queryEmbedding.length !== embeddingDimensions) {
         throw new ProviderError('Embedding provider returned query embedding with unexpected dimensions.', {
           provider: 'Embedding provider',
           statusCode: 502

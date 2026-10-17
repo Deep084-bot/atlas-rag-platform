@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { uploadDocument } from '../api/atlasApi.js';
+import { mergeDocumentLists } from '../hooks/documentPolling.js';
 
 function formatUploadDate(timestamp) {
   if (!timestamp) return '';
@@ -159,6 +160,7 @@ export function DocumentAttachModal({
   onDetachCollection,
   initialTab = 'documents',
   isFlushingCollections = false,
+  onDocumentsChanged,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -198,7 +200,7 @@ export function DocumentAttachModal({
   }, [attachedDocuments]);
 
   const mergedDocuments = useMemo(() => {
-    return localDocuments ?? allDocuments;
+    return mergeDocumentLists(localDocuments, allDocuments);
   }, [allDocuments, localDocuments]);
 
   const availableDocuments = useMemo(() => {
@@ -415,8 +417,14 @@ export function DocumentAttachModal({
       clearInterval(interval);
       setUploadProgress(100);
 
-      const doc = result.document ?? result;
-      setLocalDocuments((prev) => (prev ?? allDocuments).concat(doc));
+      const uploaded = result.document ?? result;
+      const doc = {
+        ...uploaded,
+        status: uploaded?.status ?? 'uploaded'
+      };
+      setLocalDocuments((prev) => [...(prev ?? []), doc]);
+
+      onDocumentsChanged?.();
 
       setTimeout(() => {
         if (doc.id) {

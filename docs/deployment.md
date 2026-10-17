@@ -8,11 +8,13 @@ Embeddings are selected with `EMBEDDING_PROVIDER`.
 | --- | --- | --- |
 | `huggingface` (default) | Hosted Hugging Face Inference API (`BAAI/bge-small-en-v1.5`) | `HF_API_KEY` |
 | `local` / `local-transformers` | In-process ONNX model via `@xenova/transformers` | none |
+| `voyage` | Hosted Voyage AI embeddings (opt-in, not default) | `VOYAGE_API_KEY` |
 | anything else | Startup error | — |
 
 The default remains `huggingface`. The local provider exists to remove the
 dependency on hosted Hugging Face Inference credits; it is not the production
-default.
+default. The Voyage provider is opt-in and requires a migration before use (see
+below).
 
 ### Local provider configuration
 
@@ -39,6 +41,45 @@ The model is loaded lazily on the first embedding request, memoized in-process
 Hugging Face. Initialization and inference failures surface as `ProviderError`
 (503 and 502 respectively) so operational failures are visible instead of being
 masked.
+
+### Voyage provider configuration (opt-in)
+
+`EMBEDDING_PROVIDER=voyage` is **not** the default and must not be enabled in
+production until the embedding-space migration is complete. Voyage vectors are a
+different space from BGE and from the local ONNX space.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `VOYAGE_API_KEY` | (unset) | Required; startup error if missing while `EMBEDDING_PROVIDER=voyage` |
+| `VOYAGE_MODEL` | `voyage-4-lite` | General-purpose. Use `voyage-4`/`voyage-4-large` for more quality; do not use domain models |
+| `VOYAGE_BASE_URL` | `https://api.voyageai.com/v1` | |
+| `VOYAGE_OUTPUT_DIMENSION` | model default (`1024` for `voyage-4-lite`) | Must be `256`/`512`/`1024`/`2048`; **`384` is not supported** |
+| `VOYAGE_INPUT_TYPE` | (derived) | Leave blank: `query` for `embed()`, `document` for `embedMany()`. Set only to force one value |
+| `VOYAGE_NORMALIZE` | `true` | L2 normalization (also required after dimension truncation) |
+
+Voyage returns L2-normalized vectors; the provider re-normalizes (a no-op for
+default dimensions, required for Matryoshka-truncated dimensions). The provider
+sets `input_type` per Voyage's retrieval guidance (queries vs documents get
+different prompts; the two are mutually compatible by design). The constructor
+rejects unsupported `VOYAGE_OUTPUT_DIMENSION` values and invalid `VOYAGE_INPUT_TYPE`
+values with a clear `ProviderError` rather than silently proceeding.
+Hosted-provider failures are stored as sanitized failure reasons (status-based,
+without the raw provider response). The provider never logs the API key.
+
+Per Voyage's own documentation, the general-purpose `voyage-4` series outperforms
+the domain-specific models, so `voyage-4-lite`/`voyage-4`/`voyage-4-large` are the
+right choice for Atlas — not `voyage-code-4`, `voyage-law-2`, or `voyage-finance-2`.
+
+**Dimension mismatch:** the current `chunks.embedding` is `vector(384)`, which
+Voyage cannot produce. Enabling Voyage requires a schema change or a
+separate/shadow vector table of the chosen dimension plus a full re-embed. `voyage`
+is available for evaluation and staging, not as a config-toggle swap.
+
+Gated smoke test (does nothing without a key, never prints the key):
+
+```sh
+VOYAGE_API_KEY=... node scripts/dev/voyage-embedding-smoke.mjs
+```
 
 ## Vector compatibility (critical)
 

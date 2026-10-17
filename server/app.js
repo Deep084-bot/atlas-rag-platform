@@ -13,8 +13,13 @@ import { createDocumentOrchestrator } from './documents/documentOrchestrator.js'
 import { ChunkRepository } from './ingestion/chunkRepository.js';
 import { createChunkService } from './ingestion/chunkService.js';
 import { EmbeddingRepository } from './embeddings/embeddingRepository.js';
+import { ChunkEmbeddingRepository } from './embeddings/chunkEmbeddingRepository.js';
+import { EmbeddingBackfillProgressRepository } from './embeddings/embeddingBackfillProgressRepository.js';
 import { createEmbeddingService } from './embeddings/embeddingService.js';
+import { createEmbeddingBackfillRunner } from './embeddings/embeddingBackfillRunner.js';
 import { createEmbeddingProvider } from './embeddings/createEmbeddingProvider.js';
+import { isTableSpace } from './embeddings/embeddingWriteTarget.js';
+import { resolveActiveEmbeddingSpace, resolveDimensionsForService } from './embeddings/embeddingSpaces.js';
 import { LocalStorageProvider } from './storage/local.js';
 import { ConversationRepository } from './chat/conversationRepository.js';
 import { ConversationDocumentRepository } from './chat/conversationDocumentRepository.js';
@@ -53,21 +58,42 @@ const pool = getPool();
 const documentsRepository = new DocumentsRepository(pool);
 const chunkRepository = new ChunkRepository(pool);
 const embeddingRepository = new EmbeddingRepository(pool);
+const chunkEmbeddingRepository = new ChunkEmbeddingRepository(pool);
+const embeddingBackfillProgressRepository = new EmbeddingBackfillProgressRepository(pool);
 const conversationRepository = new ConversationRepository(pool);
 const conversationDocumentRepository = new ConversationDocumentRepository(pool);
 const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
 const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, ocrService: { ocrPdf } });
 const embeddingProvider = createEmbeddingProvider();
+const embeddingSpace = resolveActiveEmbeddingSpace();
+const embeddingDimensions = resolveDimensionsForService({ provider: embeddingProvider, space: embeddingSpace });
+console.log('[atlas] embedding space active:', { spaceId: embeddingSpace.id, dimensions: embeddingDimensions, normalization: embeddingSpace.normalization });
+const embeddingBackfillRunner = isTableSpace(embeddingSpace)
+  ? createEmbeddingBackfillRunner({
+    pool,
+    documentsRepository,
+    embeddingRepository,
+    chunkEmbeddingRepository,
+    embeddingBackfillProgressRepository,
+    embeddingProvider,
+    space: embeddingSpace
+  })
+  : null;
 const embeddingService = createEmbeddingService({
   documentsRepository,
   embeddingRepository,
-  embeddingProvider
+  chunkEmbeddingRepository,
+  embeddingProvider,
+  space: embeddingSpace,
+  dimensions: embeddingDimensions,
+  embeddingBackfillRunner
 });
 documentOrchestrator.setEmbeddingService(embeddingService);
 const searchService = createSearchService({
   embeddingProvider,
-  searchRepository
+  searchRepository,
+  dimensions: embeddingDimensions
 });
 const retrievalService = createRetrievalService({
   searchService

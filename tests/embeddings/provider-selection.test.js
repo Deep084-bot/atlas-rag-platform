@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { createEmbeddingProvider } from '../../server/embeddings/createEmbeddingProvider.js';
 import { HuggingFaceProvider } from '../../server/embeddings/HuggingFaceProvider.js';
 import { LocalTransformersProvider } from '../../server/embeddings/LocalTransformersProvider.js';
+import { VoyageProvider } from '../../server/embeddings/VoyageProvider.js';
 
 test('defaults to HuggingFaceProvider when EMBEDDING_PROVIDER is unset', () => {
   const provider = createEmbeddingProvider({ env: {} });
@@ -58,6 +59,48 @@ test('passes HF_API_KEY through to the Hugging Face provider', () => {
 
   assert.ok(provider instanceof HuggingFaceProvider);
   assert.equal(provider.apiKey, 'hf_secret');
+});
+
+test('selects VoyageProvider for "voyage" when VOYAGE_API_KEY is set', () => {
+  const provider = createEmbeddingProvider({
+    env: { EMBEDDING_PROVIDER: 'voyage', VOYAGE_API_KEY: 'pa_secret' }
+  });
+
+  assert.ok(provider instanceof VoyageProvider);
+  assert.equal(provider.apiKey, 'pa_secret');
+  assert.equal(provider.model, 'voyage-4-lite');
+});
+
+test('voyage provider honors configuration overrides', () => {
+  const provider = createEmbeddingProvider({
+    env: {
+      EMBEDDING_PROVIDER: 'voyage',
+      VOYAGE_API_KEY: 'pa_secret',
+      VOYAGE_MODEL: 'voyage-4',
+      VOYAGE_BASE_URL: 'https://example.test/v1',
+      VOYAGE_OUTPUT_DIMENSION: '512',
+      VOYAGE_INPUT_TYPE: 'document',
+      VOYAGE_NORMALIZE: 'false'
+    }
+  });
+
+  assert.equal(provider.model, 'voyage-4');
+  assert.equal(provider.baseUrl, 'https://example.test/v1');
+  assert.equal(provider.dimensions, 512);
+  assert.equal(provider.inputType, 'document');
+  assert.equal(provider.normalize, false);
+});
+
+test('voyage provider requires VOYAGE_API_KEY', () => {
+  assert.throws(
+    () => createEmbeddingProvider({ env: { EMBEDDING_PROVIDER: 'voyage' } }),
+    /VOYAGE_API_KEY/
+  );
+});
+
+test('voyage is not selected by default', () => {
+  const provider = createEmbeddingProvider({ env: { VOYAGE_API_KEY: 'pa_secret' } });
+  assert.ok(provider instanceof HuggingFaceProvider);
 });
 
 test('local provider honors configuration overrides', () => {

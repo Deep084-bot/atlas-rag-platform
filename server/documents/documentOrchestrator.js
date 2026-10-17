@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import { extractTextFromUpload } from './extractText.js';
+import { ProviderError } from '../errors.js';
 
 const OCR_TEXT_MIN_LENGTH = 50;
 const MAX_OCR_PAGES = 10;
@@ -8,10 +9,45 @@ const MAX_OCR_FILE_SIZE = (Number.parseInt(process.env.MAX_OCR_FILE_SIZE_MB, 10)
 const OCR_QUALITY_THRESHOLD = 0.30;
 const MAX_FAILURE_REASON_LENGTH = 300;
 
+const HOSTED_PROVIDERS = new Set(['Hugging Face', 'Voyage']);
+
+function describeHostedProviderError(error) {
+  const provider = error.provider;
+  const status = Number.isFinite(error.statusCode) ? error.statusCode : null;
+
+  if (status === 401 || status === 403) {
+    return `${provider} authentication failed (status ${status}). Check the provider API key and permissions.`;
+  }
+
+  if (status === 402) {
+    return `${provider} rejected the request (status 402). The provider account may be out of credits or over quota.`;
+  }
+
+  if (status === 429) {
+    return `${provider} rate limit exceeded (status 429). Try again later.`;
+  }
+
+  if (status !== null && status >= 500) {
+    return `${provider} is temporarily unavailable (status ${status}). Try again later.`;
+  }
+
+  if (status !== null) {
+    return `${provider} request failed (status ${status}).`;
+  }
+
+  return `${provider} request failed.`;
+}
+
 function sanitizeFailureReason(error) {
-  const raw = error instanceof Error && typeof error.message === 'string'
-    ? error.message
-    : 'Document ingestion failed.';
+  let raw;
+
+  if (error instanceof ProviderError && HOSTED_PROVIDERS.has(error.provider)) {
+    raw = describeHostedProviderError(error);
+  } else if (error instanceof Error && typeof error.message === 'string') {
+    raw = error.message;
+  } else {
+    raw = 'Document ingestion failed.';
+  }
 
   const cleaned = raw
     .replace(/[\u0000-\u001f\u007f]+/g, ' ')
@@ -78,6 +114,39 @@ function mapFileTypeToMimeType(fileType) {
 
 export function createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService, ocrService }) {
   let activeEmbeddingService = embeddingService;
+
+  async function embedDocumentAndMarkReady(documentId, processingStartedAt) {
+    await documentsRepository.updateStatus(documentId, {
+      status: 'embedding',
+      progress: 90,
+      failureReason: null,
+      processingStartedAt
+    });
+
+    if (!activeEmbeddingService) {
+      throw new Error('Embedding service is not configured.');
+    }
+
+    await activeEmbeddingService.embedDocument(documentId);
+
+    return await documentsRepository.markReady(documentId, {
+      progress: 100
+    });
+  }
+
+  async function persistFailure(documentId, error) {
+    const failureReason = sanitizeFailureReason(error);
+
+    try {
+      return await documentsRepository.markFailed(documentId, {
+        failureReason,
+        progress: 100
+      });
+    } catch (markError) {
+      const markMessage = markError instanceof Error ? markError.message : 'Failed to persist document failure.';
+      throw new Error(`${failureReason} (and failed to persist failure state: ${markMessage})`);
+    }
+  }
 
   return {
     setEmbeddingService(nextEmbeddingService) {
@@ -197,34 +266,25 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
 
         await chunkService.chunkDocument(documentId);
 
-        await documentsRepository.updateStatus(documentId, {
-          status: 'embedding',
-          progress: 90,
-          failureReason: null,
-          processingStartedAt
-        });
-
-        if (!activeEmbeddingService) {
-          throw new Error('Embedding service is not configured.');
-        }
-
-        await activeEmbeddingService.embedDocument(documentId);
-
-        return await documentsRepository.markReady(documentId, {
-          progress: 100
-        });
+        return await embedDocumentAndMarkReady(documentId, processingStartedAt);
       } catch (error) {
-        const failureReason = sanitizeFailureReason(error);
+        return await persistFailure(documentId, error);
+      }
+    },
 
-        try {
-          return await documentsRepository.markFailed(documentId, {
-            failureReason,
-            progress: 100
-          });
-        } catch (markError) {
-          const markMessage = markError instanceof Error ? markError.message : 'Failed to persist document failure.';
-          throw new Error(`${failureReason} (and failed to persist failure state: ${markMessage})`);
-        }
+    async reembedDocument(documentId) {
+      const document = await documentsRepository.getDocumentById(documentId);
+
+      if (!document) {
+        return null;
+      }
+
+      const processingStartedAt = new Date().toISOString();
+
+      try {
+        return await embedDocumentAndMarkReady(documentId, processingStartedAt);
+      } catch (error) {
+        return await persistFailure(documentId, error);
       }
     }
   };

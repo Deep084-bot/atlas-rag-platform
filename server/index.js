@@ -1,7 +1,7 @@
 import "dotenv/config";
 import app from "./app.js";
 import { getPool } from "./db.js";
-import { reconcileStuckDocuments } from "./documents/reconcileStuckDocuments.js";
+import { startReconcileScheduler } from "./documents/reconcileScheduler.js";
 
 console.log(
   "DATABASE_URL:",
@@ -12,19 +12,34 @@ console.log("EMBEDDING_PROVIDER:", process.env.EMBEDDING_PROVIDER);
 
 const port = Number(process.env.PORT ?? 8787);
 
-const server = app.listen(port, async () => {
+let reconcileScheduler = null;
+
+const server = app.listen(port, () => {
   console.log(`Atlas API listening on http://localhost:${port}`);
 
   try {
     const pool = getPool();
-    if (pool) await reconcileStuckDocuments(pool);
+
+    if (pool) {
+      reconcileScheduler = startReconcileScheduler({
+        pool,
+        intervalMs: Number(process.env.RECONCILE_INTERVAL_MS) || undefined,
+        timeoutMinutes: Number(process.env.RECONCILE_STUCK_MINUTES) || undefined
+      });
+    }
   } catch (err) {
-    console.error('[reconcile] Failed:', err.message);
+    console.error('[reconcile] Failed to start:', err.message);
   }
 });
 
 function shutdown(signal) {
   console.log('[atlas] %s received, shutting down gracefully', signal);
+
+  if (reconcileScheduler) {
+    reconcileScheduler.stop();
+    reconcileScheduler = null;
+  }
+
   server.close(() => {
     console.log('[atlas] HTTP server closed');
     process.exit(0);

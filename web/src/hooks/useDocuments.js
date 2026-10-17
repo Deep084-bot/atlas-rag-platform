@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { deleteDocument, listDocuments, renameDocument as renameDocumentApi } from '../api/atlasApi.js';
-
-const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'ocr', 'chunking', 'embedding']);
-const POLLING_TIMEOUT_MS = 600_000;
-const POLL_INTERVAL_INITIAL_MS = 2_000;
-const POLL_INTERVAL_MAX_MS = 10_000;
-const POLL_BACKOFF_RATE = 1.5;
+import { hasProcessingDocuments, nextPollPlan, POLL_DEFAULTS } from './documentPolling.js';
 
 export function useDocuments() {
   const [documents, setDocuments] = useState([]);
@@ -14,14 +9,10 @@ export function useDocuments() {
   const [error, setError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  const pollIntervalRef = useRef(POLL_INTERVAL_INITIAL_MS);
+  const pollIntervalRef = useRef(POLL_DEFAULTS.initialIntervalMs);
   const pollStartRef = useRef(null);
   const pollTimerRef = useRef(null);
   const mountedRef = useRef(false);
-
-  function hasProcessingDocuments(docs) {
-    return docs.some((d) => POLLING_STATUSES.has(d.status));
-  }
 
   function cancelPollTimer() {
     if (pollTimerRef.current) {
@@ -37,25 +28,23 @@ export function useDocuments() {
       pollStartRef.current = Date.now();
     }
 
-    if (Date.now() - pollStartRef.current >= POLLING_TIMEOUT_MS) {
-      pollStartRef.current = null;
-      return;
-    }
-
     pollTimerRef.current = setTimeout(async () => {
       try {
         const nextDocuments = await loadDocuments();
-        if (!hasProcessingDocuments(nextDocuments)) {
+        const plan = nextPollPlan({
+          documents: nextDocuments,
+          elapsedMs: Date.now() - pollStartRef.current,
+          currentIntervalMs: pollIntervalRef.current
+        });
+
+        if (plan.stop) {
           pollStartRef.current = null;
-          pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
+          pollIntervalRef.current = POLL_DEFAULTS.initialIntervalMs;
           return;
         }
-        const nextDelay = Math.min(
-          Math.round(pollIntervalRef.current * POLL_BACKOFF_RATE),
-          POLL_INTERVAL_MAX_MS
-        );
-        pollIntervalRef.current = nextDelay;
-        startPoll(nextDelay);
+
+        pollIntervalRef.current = plan.nextIntervalMs;
+        startPoll(plan.delayMs);
       } catch {
         startPoll(pollIntervalRef.current);
       }
@@ -84,8 +73,8 @@ export function useDocuments() {
 
     void loadDocuments().then((docs) => {
       if (mountedRef.current && hasProcessingDocuments(docs)) {
-        pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
-        startPoll(POLL_INTERVAL_INITIAL_MS);
+        pollIntervalRef.current = POLL_DEFAULTS.initialIntervalMs;
+        startPoll(POLL_DEFAULTS.initialIntervalMs);
       }
     }).catch(() => {});
 

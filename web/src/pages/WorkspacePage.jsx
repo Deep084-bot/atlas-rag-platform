@@ -942,6 +942,7 @@ export function WorkspacePage() {
         onDetachCollection={handleDetachCollection}
         isFlushingCollections={flushingCollections}
         initialTab={attachModalTab}
+        onDocumentsChanged={() => documents.refresh()}
       />
 
       {showCheatSheet && (
