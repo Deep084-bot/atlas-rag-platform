@@ -148,8 +148,8 @@ export function createEmbeddingService({
       };
     },
 
-    async getEmbeddingStatus(documentId) {
-      const document = await documentsRepository.getDocumentById(documentId);
+    async getEmbeddingStatus(documentId, { client = null } = {}) {
+      const document = await documentsRepository.getDocumentById(documentId, { client });
 
       if (!document) {
         return null;
@@ -160,7 +160,7 @@ export function createEmbeddingService({
         // two independent counts. Two counts can coincide while a chunk is still
         // missing an embedding (or an orphan embedding row inflates the total),
         // so the count comparison is not a reliable source of truth.
-        const verification = await chunkEmbeddingRepository.isDocumentFullyEmbedded(documentId, space.id);
+        const verification = await chunkEmbeddingRepository.isDocumentFullyEmbedded(documentId, space.id, { client });
 
         return {
           documentId,
@@ -172,8 +172,8 @@ export function createEmbeddingService({
         };
       }
 
-      const totalChunks = await embeddingRepository.countTotalChunks(documentId);
-      const embeddedChunks = await embeddingRepository.countEmbeddedChunks(documentId);
+      const totalChunks = await embeddingRepository.countTotalChunks(documentId, { client });
+      const embeddedChunks = await embeddingRepository.countEmbeddedChunks(documentId, { client });
 
       return {
         documentId,

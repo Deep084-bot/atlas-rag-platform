@@ -20,6 +20,7 @@ import { VoyageProvider } from '../../server/embeddings/VoyageProvider.js';
 import { GroqProvider } from '../../server/generation/GroqProvider.js';
 import { ProviderError } from '../../server/errors.js';
 import { VOYAGE_SPACE_ID, VOYAGE_DIMENSIONS_DEFAULT } from '../../server/embeddings/embeddingSpaces.js';
+import { withTransaction } from '../../server/embeddings/embeddingBackfillRunner.js';
 
 const SHADOW_TABLE = 'embedding_shadow_chunks';
 const SAFE_DB_PATTERN = /(staging|stage|disposable|test|scratch|sandbox|_stg)/i;
@@ -288,7 +289,8 @@ async function main() {
       documentsRepository,
       chunkService,
       embeddingService,
-      ocrService: null
+      ocrService: null,
+      runInTransaction: (fn) => withTransaction(pool, fn)
     });
 
     // 1. Happy path: upload -> extraction -> chunking -> Voyage embedding -> persistence -> ready
@@ -355,7 +357,8 @@ async function main() {
       documentsRepository,
       chunkService,
       embeddingService: failingEmbeddingService,
-      ocrService: null
+      ocrService: null,
+      runInTransaction: (fn) => withTransaction(pool, fn)
     });
 
     const failing = await insertTextDocument({ documentsRepository, storageDir, fileName: 'failure-case.txt', text: happyText });

@@ -225,3 +225,77 @@ test('getEmbeddingStatus keeps the legacy shape for BGE', async () => {
     complete: true
   });
 });
+
+test('Voyage getEmbeddingStatus forwards the transaction client to every probe', async () => {
+  const client = { __txClient: true };
+  const seen = { document: [], identity: [] };
+  const documentsRepository = {
+    getDocumentById: async (id, options = {}) => {
+      seen.document.push({ id, client: options.client ?? null });
+      return { id };
+    }
+  };
+  const service = createEmbeddingService({
+    documentsRepository,
+    embeddingRepository: baseRepos().embeddingRepository,
+    chunkEmbeddingRepository: {
+      isDocumentFullyEmbedded: async (documentId, spaceId, options = {}) => {
+        seen.identity.push({ documentId, spaceId, client: options.client ?? null });
+        return { totalChunks: 1, embeddedChunks: 1, missingChunks: 0, complete: true };
+      }
+    },
+    embeddingProvider: { embedMany: async () => [] },
+    space: VOYAGE_SPACE
+  });
+
+  await service.getEmbeddingStatus('doc-1', { client });
+
+  assert.deepEqual(seen.document, [{ id: 'doc-1', client }]);
+  assert.deepEqual(seen.identity, [{ documentId: 'doc-1', spaceId: VOYAGE_SPACE.id, client }]);
+});
+
+test('BGE getEmbeddingStatus forwards the transaction client to every probe', async () => {
+  const client = { __txClient: true };
+  const seen = { document: [], total: [], embedded: [] };
+  const documentsRepository = {
+    getDocumentById: async (id, options = {}) => {
+      seen.document.push({ id, client: options.client ?? null });
+      return { id };
+    }
+  };
+  const embeddingRepository = {
+    countTotalChunks: async (id, options = {}) => {
+      seen.total.push({ id, client: options.client ?? null });
+      return 2;
+    },
+    countEmbeddedChunks: async (id, options = {}) => {
+      seen.embedded.push({ id, client: options.client ?? null });
+      return 2;
+    }
+  };
+  const service = createEmbeddingService({
+    documentsRepository,
+    embeddingRepository,
+    embeddingProvider: { embedMany: async () => [] },
+    space: BGE_SPACE
+  });
+
+  const status = await service.getEmbeddingStatus('doc-1', { client });
+
+  assert.equal(status.complete, true);
+  assert.deepEqual(seen.document, [{ id: 'doc-1', client }]);
+  assert.deepEqual(seen.total, [{ id: 'doc-1', client }]);
+  assert.deepEqual(seen.embedded, [{ id: 'doc-1', client }]);
+});
+
+test('getEmbeddingStatus returns null when the document is absent (client-scoped)', async () => {
+  const client = { __txClient: true };
+  const service = createEmbeddingService({
+    documentsRepository: { getDocumentById: async (id, options = {}) => (options.client === client ? null : { id }) },
+    embeddingRepository: baseRepos().embeddingRepository,
+    embeddingProvider: { embedMany: async () => [] },
+    space: BGE_SPACE
+  });
+
+  assert.equal(await service.getEmbeddingStatus('doc-1', { client }), null);
+});

@@ -50,12 +50,14 @@ export class EmbeddingRepository {
     return result.rows[0] ?? null;
   }
 
-  async countTotalChunks(documentId) {
-    if (this.pool === null) {
+  async countTotalChunks(documentId, { client = null } = {}) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
-    const result = await this.pool.query(
+    const result = await queryable.query(
       `
         SELECT COUNT(*)::int AS total_chunks
         FROM chunks
@@ -67,12 +69,14 @@ export class EmbeddingRepository {
     return Number(result.rows[0]?.total_chunks ?? 0);
   }
 
-  async countEmbeddedChunks(documentId) {
-    if (this.pool === null) {
+  async countEmbeddedChunks(documentId, { client = null } = {}) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
-    const result = await this.pool.query(
+    const result = await queryable.query(
       `
         SELECT COUNT(*)::int AS embedded_chunks
         FROM chunks

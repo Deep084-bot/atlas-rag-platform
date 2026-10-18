@@ -16,7 +16,7 @@ import { EmbeddingRepository } from './embeddings/embeddingRepository.js';
 import { ChunkEmbeddingRepository } from './embeddings/chunkEmbeddingRepository.js';
 import { EmbeddingBackfillProgressRepository } from './embeddings/embeddingBackfillProgressRepository.js';
 import { createEmbeddingService } from './embeddings/embeddingService.js';
-import { createEmbeddingBackfillRunner } from './embeddings/embeddingBackfillRunner.js';
+import { createEmbeddingBackfillRunner, withTransaction } from './embeddings/embeddingBackfillRunner.js';
 import { createEmbeddingProvider } from './embeddings/createEmbeddingProvider.js';
 import { isTableSpace } from './embeddings/embeddingWriteTarget.js';
 import { resolveActiveEmbeddingSpace, resolveDimensionsForService } from './embeddings/embeddingSpaces.js';
@@ -64,7 +64,12 @@ const conversationRepository = new ConversationRepository(pool);
 const conversationDocumentRepository = new ConversationDocumentRepository(pool);
 const searchRepository = new SearchRepository(pool);
 const chunkService = createChunkService({ documentsRepository, chunkRepository });
-const documentOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, ocrService: { ocrPdf } });
+const documentOrchestrator = createDocumentOrchestrator({
+  documentsRepository,
+  chunkService,
+  ocrService: { ocrPdf },
+  runInTransaction: (fn) => withTransaction(pool, fn)
+});
 const embeddingProvider = createEmbeddingProvider();
 const embeddingSpace = resolveActiveEmbeddingSpace();
 const embeddingDimensions = resolveDimensionsForService({ provider: embeddingProvider, space: embeddingSpace });

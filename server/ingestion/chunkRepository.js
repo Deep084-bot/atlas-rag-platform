@@ -64,6 +64,24 @@ export class ChunkRepository {
         [documentId]
       );
 
+      // A `ready` document must never keep that status against a brand-new chunk
+      // set. Move it back into `embedding` inside the same transaction (we already
+      // hold its row lock), so readiness is only ever republished by the
+      // orchestrator after authoritative completeness verification. The status
+      // transition and the new chunks commit atomically — there is no window in
+      // which a committed `ready` document has unembedded chunks.
+      await client.query(
+        `
+          UPDATE documents
+          SET status = 'embedding',
+              progress = LEAST(progress, 90),
+              updated_at = now()
+          WHERE id = $1
+            AND status = 'ready'
+        `,
+        [documentId]
+      );
+
       await client.query('COMMIT');
       return insertedChunks;
     } catch (error) {

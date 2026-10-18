@@ -12,6 +12,7 @@ import { ChunkRepository } from '../../server/ingestion/chunkRepository.js';
 import {
   INTEGRATION_DB_ENV,
   acquireClient,
+  acquireSchemaLock,
   applySchema,
   assertInvariant,
   createIntegrationPool,
@@ -20,6 +21,7 @@ import {
   insertDocument,
   readInvariantState,
   releaseClient,
+  releaseSchemaLock,
   resetSchema,
   resolveIntegrationTarget,
   verifyIntegrationTarget
@@ -38,6 +40,7 @@ try {
 }
 
 let pool = null;
+let schemaLockClient = null;
 let skipReason = null;
 
 before(async () => {
@@ -52,11 +55,17 @@ before(async () => {
 
   pool = createIntegrationPool(target);
   await verifyIntegrationTarget(pool, target);
+  // Serialize schema (re)creation with any other integration file sharing this
+  // disposable database, then hold the lock until this file's tests finish.
+  schemaLockClient = await acquireSchemaLock(pool);
   await resetSchema(pool);
   await applySchema(pool);
 });
 
 after(async () => {
+  await releaseSchemaLock(schemaLockClient);
+  schemaLockClient = null;
+
   if (pool) {
     await pool.end();
     pool = null;

@@ -16,6 +16,9 @@ function createDocsRepo(overrides = {}) {
       calls.updateStatus.push({ id, payload });
       return { id, ...payload };
     },
+    async lockForUpdate(id) {
+      return { id };
+    },
     async markReady(id, payload) {
       calls.markReady.push({ id, payload });
       return { id, status: 'ready', progress: payload.progress };
@@ -34,8 +37,12 @@ test('reembedDocument re-embeds then marks the document ready', async () => {
   const orchestrator = createDocumentOrchestrator({
     documentsRepository,
     chunkService: {},
-    embeddingService: { embedDocument: async () => { embedded += 1; return { embeddedChunks: 2 }; } },
-    ocrService: null
+    embeddingService: {
+      embedDocument: async () => { embedded += 1; return { embeddedChunks: 2 }; },
+      getEmbeddingStatus: async () => ({ complete: true })
+    },
+    ocrService: null,
+    runInTransaction: (fn) => fn({})
   });
 
   const result = await orchestrator.reembedDocument('doc-1');
@@ -92,7 +99,10 @@ test('reembedDocument returns null when the document does not exist', async () =
   const orchestrator = createDocumentOrchestrator({
     documentsRepository,
     chunkService: {},
-    embeddingService: { embedDocument: async () => ({}) },
+    embeddingService: {
+      embedDocument: async () => ({}),
+      getEmbeddingStatus: async () => null
+    },
     ocrService: null
   });
 

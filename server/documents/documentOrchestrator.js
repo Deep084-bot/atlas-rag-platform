@@ -112,8 +112,80 @@ function mapFileTypeToMimeType(fileType) {
   return 'text/plain';
 }
 
-export function createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService, ocrService }) {
+// Statuses returned by the table-backed backfill runner that permit the
+// document to become `ready`, subject to an authoritative completeness check.
+const PUBLISHABLE_BACKFILL_STATUSES = new Set(['completed', 'skipped']);
+
+function describeBackfillFailure(result) {
+  const detail = typeof result?.error === 'string' ? result.error.trim() : '';
+
+  return detail.length > 0 ? `Embedding backfill failed: ${detail}` : 'Embedding backfill failed.';
+}
+
+export function createDocumentOrchestrator({
+  documentsRepository,
+  chunkService,
+  embeddingService,
+  ocrService,
+  runInTransaction = null
+}) {
   let activeEmbeddingService = embeddingService;
+
+  /**
+   * Publish a document as `ready` atomically:
+   *
+   *   1. open one transaction (bounded `lock_timeout` / `statement_timeout` /
+   *      `idle_in_transaction_session_timeout` are applied by the caller's
+   *      `runInTransaction`),
+   *   2. take the document row lock (`SELECT ... FOR UPDATE`), which serializes
+   *      with chunk replacement, deletion, and the backfill runner's completion,
+   *   3. authoritatively verify the current chunk set against the active space's
+   *      embeddings on the *same* connection,
+   *   4. only then transition the document to `ready` on that same connection.
+   *
+   * Because the verification and the transition share the transaction and the
+   * document row lock, a concurrent chunk replacement can never interleave
+   * between them. A replacement that wins the lock first makes the new chunk set
+   * visible to step 3, so verification fails closed instead of publishing an
+   * unembedded document.
+   *
+   * The probe and the transition must run on the transaction client — running
+   * `markReady` against the pool here would deadlock on a second connection that
+   * waits for the very row lock this transaction holds.
+   */
+  async function verifyAndMarkDocumentReady(documentId) {
+    if (typeof runInTransaction !== 'function') {
+      throw new Error('A transaction runner is required to publish document readiness.');
+    }
+
+    if (typeof activeEmbeddingService?.getEmbeddingStatus !== 'function') {
+      throw new Error('The active embedding service cannot verify document completeness.');
+    }
+
+    return runInTransaction(async (client) => {
+      const locked = await documentsRepository.lockForUpdate(documentId, { client });
+
+      if (!locked) {
+        // The document was deleted; do not recreate it or publish readiness.
+        return { outcome: 'missing' };
+      }
+
+      const status = await activeEmbeddingService.getEmbeddingStatus(documentId, { client });
+
+      if (!status) {
+        // Disappeared between the lock and the probe: treat as missing.
+        return { outcome: 'missing' };
+      }
+
+      if (status.complete !== true) {
+        return { outcome: 'incomplete' };
+      }
+
+      const document = await documentsRepository.markReady(documentId, { progress: 100 }, { client });
+
+      return { outcome: 'ready', document };
+    });
+  }
 
   async function embedDocumentAndMarkReady(documentId, processingStartedAt) {
     await documentsRepository.updateStatus(documentId, {
@@ -127,11 +199,61 @@ export function createDocumentOrchestrator({ documentsRepository, chunkService, 
       throw new Error('Embedding service is not configured.');
     }
 
-    await activeEmbeddingService.embedDocument(documentId);
+    const result = await activeEmbeddingService.embedDocument(documentId);
 
-    return await documentsRepository.markReady(documentId, {
-      progress: 100
-    });
+    // A null/undefined result is the legacy/repository contract for a document
+    // that no longer exists. Never publish it, and never mark it failed: there
+    // is nothing left to transition.
+    if (result === null || result === undefined) {
+      return null;
+    }
+
+    const isBackfillResult = Object.prototype.hasOwnProperty.call(result, 'status');
+
+    if (isBackfillResult) {
+      const { status } = result;
+
+      if (status === 'failed') {
+        // Route into the existing failure-persistence path; markReady is never reached.
+        throw new Error(describeBackfillFailure(result));
+      }
+
+      if (status === 'missing') {
+        // The runner verified the document no longer exists; leave it alone.
+        return null;
+      }
+
+      if (!PUBLISHABLE_BACKFILL_STATUSES.has(status)) {
+        // Unknown or malformed status: fail closed rather than guess.
+        throw new Error(
+          `Embedding backfill returned an unrecognised status${
+            typeof status === 'string' ? ` "${status}"` : ''
+          }; refusing to mark the document ready.`
+        );
+      }
+    }
+
+    const readiness = await verifyAndMarkDocumentReady(documentId);
+
+    if (readiness.outcome === 'missing') {
+      // Document disappeared between embedding and verification.
+      return null;
+    }
+
+    if (readiness.outcome === 'incomplete') {
+      // `skipped` means another worker still owns the document. If it is not yet
+      // complete, leave it in-progress (the owner or reconcile sweep will finish
+      // it) instead of publishing or failing it.
+      if (isBackfillResult && result.status === 'skipped') {
+        return null;
+      }
+
+      throw new Error(
+        'Embedding is incomplete for the active embedding space; refusing to mark the document ready.'
+      );
+    }
+
+    return readiness.document;
   }
 
   async function persistFailure(documentId, error) {

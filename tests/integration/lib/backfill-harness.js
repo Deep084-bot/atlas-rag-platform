@@ -221,6 +221,39 @@ export async function acquireClient(pool) {
   return client;
 }
 
+// Advisory-lock key shared by every integration file that resets the same
+// disposable schema. The lock is held for the lifetime of the file so two files
+// running concurrently cannot drop/recreate the schema out from under each
+// other's tests.
+export const INTEGRATION_SCHEMA_LOCK_KEY = 918273645;
+
+/**
+ * Acquire a session-level advisory lock that serializes schema setup across
+ * concurrent integration files sharing one disposable database.
+ *
+ * The returned client must be held until the file's tests finish and passed to
+ * `releaseSchemaLock`.
+ */
+export async function acquireSchemaLock(pool) {
+  const client = await pool.connect();
+  await client.query('SELECT pg_advisory_lock($1)', [INTEGRATION_SCHEMA_LOCK_KEY]);
+  return client;
+}
+
+export async function releaseSchemaLock(client) {
+  if (!client) {
+    return;
+  }
+
+  try {
+    await client.query('SELECT pg_advisory_unlock($1)', [INTEGRATION_SCHEMA_LOCK_KEY]);
+  } catch {
+    // The connection is already gone; the lock dies with the session anyway.
+  }
+
+  client.release();
+}
+
 /**
  * Return a client to the pool in a clean state. A connection that is mid
  * transaction (or aborted) is rolled back first, which releases any

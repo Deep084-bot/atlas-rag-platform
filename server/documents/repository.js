@@ -109,12 +109,18 @@ export class DocumentsRepository {
     return this.toDocumentSummary(result.rows[0] ?? null);
   }
 
-  async updateStatus(id, { status, progress, failureReason = null, processingStartedAt = null, readyAt = null, failedAt = null }) {
-    if (this.pool === null) {
+  async updateStatus(
+    id,
+    { status, progress, failureReason = null, processingStartedAt = null, readyAt = null, failedAt = null },
+    { client = null } = {}
+  ) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
-    const result = await this.pool.query(
+    const result = await queryable.query(
       `
         UPDATE documents
         SET status = $2,
@@ -133,22 +139,30 @@ export class DocumentsRepository {
     return this.toDocumentSummary(result.rows[0] ?? null);
   }
 
-  async markReady(id, { progress = 100 } = {}) {
-    return this.updateStatus(id, {
-      status: 'ready',
-      progress,
-      failureReason: null,
-      readyAt: new Date().toISOString()
-    });
+  async markReady(id, { progress = 100 } = {}, { client = null } = {}) {
+    return this.updateStatus(
+      id,
+      {
+        status: 'ready',
+        progress,
+        failureReason: null,
+        readyAt: new Date().toISOString()
+      },
+      { client }
+    );
   }
 
-  async markFailed(id, { failureReason, progress = null } = {}) {
-    return this.updateStatus(id, {
-      status: 'failed',
-      progress,
-      failureReason,
-      failedAt: new Date().toISOString()
-    });
+  async markFailed(id, { failureReason, progress = null } = {}, { client = null } = {}) {
+    return this.updateStatus(
+      id,
+      {
+        status: 'failed',
+        progress,
+        failureReason,
+        failedAt: new Date().toISOString()
+      },
+      { client }
+    );
   }
 
   async listDocuments() {
@@ -184,8 +198,10 @@ export class DocumentsRepository {
     return result.rows.map((row) => this.toDocumentSummary(row));
   }
 
-  async getDocumentById(id) {
-    if (this.pool === null) {
+  async getDocumentById(id, { client = null } = {}) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
@@ -196,7 +212,7 @@ export class DocumentsRepository {
       LIMIT 1
     `;
 
-    const result = await this.pool.query(query, [id]);
+    const result = await queryable.query(query, [id]);
     return this.toDocumentDetails(result.rows[0] ?? null);
   }
 

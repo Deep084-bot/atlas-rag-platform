@@ -77,6 +77,7 @@ test('orchestrator marks ready on valid embedding path', async () => {
       updateStatus: async () => ({ id: 'd2' }),
       updateDocumentText: async () => ({ id: 'd2' }),
       updateOcrQuality: async () => ({ id: 'd2' }),
+      lockForUpdate: async () => ({ id: 'd2' }),
       markReady: async () => {
         markedReady = true;
         return { id: 'd2', status: 'ready' };
@@ -84,13 +85,17 @@ test('orchestrator marks ready on valid embedding path', async () => {
       markFailed: async (id, args) => ({ id, status: 'failed', failureReason: args.failureReason })
     };
     const chunkService = { chunkDocument: async () => ({ chunks: [] }) };
-    const embService = { embedDocument: async () => ({ documentId: 'd2', embeddedChunks: 1 }) };
+    const embService = {
+      embedDocument: async () => ({}),
+      getEmbeddingStatus: async () => ({ complete: true })
+    };
 
     const orch = createDocumentOrchestrator({
       documentsRepository: docsRepo,
       chunkService,
       embeddingService: embService,
-      ocrService: null
+      ocrService: null,
+      runInTransaction: (fn) => fn({})
     });
 
     const res = await orch.processDocument('d2');

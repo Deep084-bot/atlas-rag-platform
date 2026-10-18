@@ -57,18 +57,21 @@ function toSqlVector(vector) {
 }
 
 async function upsertDocument(pool, { document, userId }) {
+  // A seeded document must not be `ready` before its chunks exist and are
+  // embedded. Seed it as `chunking`; readiness is published only by
+  // `markDocumentReady` once every current chunk has an embedding.
   await pool.query(
     `
       INSERT INTO documents (id, user_id, file_name, file_type, file_size_bytes, storage_path, extracted_text, source_type, status, progress, ready_at, updated_at)
-      VALUES ($1, $2, $3, 'text/plain', $4, NULL, $5, 'upload', 'ready', 100, now(), now())
+      VALUES ($1, $2, $3, 'text/plain', $4, NULL, $5, 'upload', 'chunking', 0, NULL, now())
       ON CONFLICT (id)
       DO UPDATE SET user_id = EXCLUDED.user_id,
                     file_name = EXCLUDED.file_name,
                     file_size_bytes = EXCLUDED.file_size_bytes,
                     extracted_text = EXCLUDED.extracted_text,
-                    status = 'ready',
-                    progress = 100,
-                    ready_at = now(),
+                    status = 'chunking',
+                    progress = 0,
+                    ready_at = NULL,
                     updated_at = now();
     `,
     [document.id, userId, document.fileName, Buffer.byteLength(document.text, 'utf8'), document.text]
@@ -81,6 +84,37 @@ async function replaceChunks(chunkRepository, { documentId, chunks }) {
   // transaction. A raw DELETE here could otherwise leave a completed progress row
   // pointing at a chunk set that no longer exists.
   return chunkRepository.replaceDocumentChunks(documentId, chunks);
+}
+
+async function markDocumentReady(pool, documentId) {
+  // Publish readiness only after every current chunk has a legacy embedding, and
+  // only in a single guarded statement (mirrors the orchestrator's readiness
+  // invariant for the seed's legacy BGE path). Refuses — and throws — if any
+  // chunk is still unembedded, so the seed can never create an invalid `ready`
+  // document even if the embedding loop is interrupted.
+  const result = await pool.query(
+    `
+      UPDATE documents
+      SET status = 'ready',
+          progress = 100,
+          failure_reason = NULL,
+          ready_at = now(),
+          updated_at = now()
+      WHERE id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chunks
+          WHERE document_id = $1
+            AND embedding IS NULL
+        )
+      RETURNING id
+    `,
+    [documentId]
+  );
+
+  if (result.rowCount !== 1) {
+    throw new Error(`Refusing to mark ${documentId} ready: it still has chunks without embeddings.`);
+  }
 }
 
 async function main() {
@@ -123,6 +157,8 @@ async function main() {
 
         await pool.query('UPDATE chunks SET embedding = $2::vector WHERE id = $1;', [stored[i].id, toSqlVector(vectors[i])]);
       }
+
+      await markDocumentReady(pool, document.id);
 
       summary.documents.push({ id: document.id, fileName: document.fileName, chunks: stored.length });
       summary.embeddedChunks += stored.length;

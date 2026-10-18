@@ -12,6 +12,7 @@ import { createChunkService } from '../../server/ingestion/chunkService.js';
 import { createEmbeddingService } from '../../server/embeddings/embeddingService.js';
 import { createSearchService } from '../../server/search/searchService.js';
 import { createDocumentOrchestrator } from '../../server/documents/documentOrchestrator.js';
+import { withTransaction } from '../../server/embeddings/embeddingBackfillRunner.js';
 import { createEmbeddingProvider } from '../../server/embeddings/createEmbeddingProvider.js';
 import { extractTextFromUpload } from '../../server/documents/extractText.js';
 
@@ -100,7 +101,13 @@ try {
     }
   };
 
-  const orchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService, ocrService });
+  const orchestrator = createDocumentOrchestrator({
+    documentsRepository,
+    chunkService,
+    embeddingService,
+    ocrService,
+    runInTransaction: (fn) => withTransaction(pool, fn)
+  });
 
   const startedAt = Date.now();
   const result = await orchestrator.processDocument(documentId);
@@ -160,7 +167,13 @@ try {
     }
   };
   const badEmbeddingService = createEmbeddingService({ documentsRepository, embeddingRepository, embeddingProvider: badProvider, batchSize: 8 });
-  const badOrchestrator = createDocumentOrchestrator({ documentsRepository, chunkService, embeddingService: badEmbeddingService, ocrService });
+  const badOrchestrator = createDocumentOrchestrator({
+    documentsRepository,
+    chunkService,
+    embeddingService: badEmbeddingService,
+    ocrService,
+    runInTransaction: (fn) => withTransaction(pool, fn)
+  });
 
   const failedResult = await badOrchestrator.processDocument(failedDocumentId);
   const persistedFailure = await documentsRepository.getDocumentById(failedDocumentId);
