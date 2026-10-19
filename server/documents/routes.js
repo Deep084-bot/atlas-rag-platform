@@ -466,6 +466,20 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
 
   router.get('/:id/embeddings/status', async (request, response) => {
     try {
+      const userId = requireAuthenticatedUser(request, response);
+
+      if (!userId) {
+        return;
+      }
+
+      const document = await documentsRepository.getDocumentByIdForUser(request.params.id, userId);
+
+      if (!document) {
+        return response.status(404).json({
+          error: 'document_not_found'
+        });
+      }
+
       const result = await embeddingService.getEmbeddingStatus(request.params.id);
 
       if (!result) {

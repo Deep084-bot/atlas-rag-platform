@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { computeGlowRadius } from './orbGeometry.js';
 
 const ORB_CORE_RADIUS = 28;
 const ORBIT_RINGS = 3;
@@ -63,6 +64,11 @@ export function KnowledgeOrb({ mouseX = 0.5, mouseY = 0.5, isActive = true }) {
       const w = rect.width;
       const h = rect.height;
 
+      if (w <= 0 || h <= 0) {
+        animRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
       const cx = w / 2;
       const cy = h / 2;
       const maxDim = Math.min(w, h);
@@ -75,7 +81,7 @@ export function KnowledgeOrb({ mouseX = 0.5, mouseY = 0.5, isActive = true }) {
 
       // Outer glow
       const breathGlow = 0.08 + 0.04 * Math.sin(t * 0.012);
-      const glowRadius = 80 * scale + 20 * Math.sin(t * 0.01);
+      const glowRadius = computeGlowRadius(scale, t);
       const glow = ctx.createRadialGradient(cx + dx, cy + dy, 0, cx + dx, cy + dy, glowRadius);
       glow.addColorStop(0, `rgba(${TEAL.r}, ${TEAL.g}, ${TEAL.b}, ${breathGlow})`);
       glow.addColorStop(0.5, `rgba(${SKY.r}, ${SKY.g}, ${SKY.b}, ${breathGlow * 0.5})`);
