@@ -218,6 +218,16 @@ export function createDocumentOrchestrator({
         throw new Error(describeBackfillFailure(result));
       }
 
+      if (status === 'ineligible') {
+        // The runner refused to embed because the document is not in a state the
+        // active policy allows (see `embeddingEligibility.js`). Never publish
+        // readiness and never mark it failed: the document's owning transition
+        // (deletion, reprocessing, or an operator sweep) is responsible for its
+        // next state. Publishing `ready` here would report embeddings we never
+        // produced.
+        return null;
+      }
+
       if (status === 'missing') {
         // The runner verified the document no longer exists; leave it alone.
         return null;

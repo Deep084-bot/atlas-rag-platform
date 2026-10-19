@@ -3,6 +3,11 @@ import { applyTransactionTimeouts, DEFAULT_TRANSACTION_TIMEOUTS } from '../db/tr
 import { DEFAULT_LEASE_MS, MAX_LEASE_MS } from './embeddingBackfillProgressRepository.js';
 import { computeEmbeddingL2Norm, isTableSpace } from './embeddingWriteTarget.js';
 import { resolveDimensionsForService } from './embeddingSpaces.js';
+import {
+  DEFAULT_EMBEDDING_ELIGIBILITY_POLICY,
+  assertEmbeddingEligibilityPolicy,
+  evaluateEmbeddingEligibility
+} from './embeddingEligibility.js';
 
 const MAX_FAILURE_REASON_LENGTH = 500;
 const MAX_CLAIM_RETRIES = 3;
@@ -213,6 +218,12 @@ export async function withTransaction(pool, fn, transactionTimeouts = DEFAULT_TR
  *     being silently zeroed.
  *   * Every transaction uses bounded `lock_timeout`, `statement_timeout` and
  *     `idle_in_transaction_session_timeout` waits.
+ *   * Document eligibility (`eligibilityPolicy`, default `general`) is verified
+ *     at three points — an early read, again under the document row lock before
+ *     the claim, and again under the same lock immediately before every provider
+ *     batch. A document that is not in an allowed status yields an explicit
+ *     `ineligible` result and never reaches the provider; a status change
+ *     mid-flight stops the run before the next batch is dispatched.
  *
  * The runner never contacts a provider on its own and never falls back to the
  * legacy store: a non-table space fails construction, and every write is scoped
@@ -230,6 +241,7 @@ export function createEmbeddingBackfillRunner({
   dimensions,
   leaseMs = DEFAULT_LEASE_MS,
   transactionTimeouts = DEFAULT_TRANSACTION_TIMEOUTS,
+  eligibilityPolicy = DEFAULT_EMBEDDING_ELIGIBILITY_POLICY,
   logger = console,
   now = () => new Date(),
   runInTransaction = null
@@ -237,6 +249,8 @@ export function createEmbeddingBackfillRunner({
   if (!space || !isTableSpace(space)) {
     throw new ValidationError('The embedding backfill runner requires a table-backed (Voyage) space.');
   }
+
+  const resolvedEligibilityPolicy = assertEmbeddingEligibilityPolicy(eligibilityPolicy);
 
   if (!documentsRepository || !embeddingRepository || !chunkEmbeddingRepository || !embeddingBackfillProgressRepository) {
     throw new ValidationError('The embedding backfill runner requires all repositories.');
@@ -266,16 +280,59 @@ export function createEmbeddingBackfillRunner({
   const spaceId = space.id;
 
   /**
+   * Build the explicit, non-success result for a document the active policy may
+   * not embed. `reason` is a stable code (see `EMBEDDING_INELIGIBLE_REASONS`) so
+   * callers can branch without parsing prose, and `documentStatus` records what
+   * was actually observed.
+   */
+  function ineligibleResult(documentId, { reason, documentStatus = null, embeddedChunks = 0, totalChunks = 0 }) {
+    return {
+      documentId,
+      spaceId,
+      status: 'ineligible',
+      reason,
+      documentStatus: documentStatus ?? null,
+      embeddedChunks,
+      totalChunks
+    };
+  }
+
+  /**
    * Acquire the document lease, retrying only the small set of errors that are
    * genuinely safe to retry (lock/statement timeout, serialization failure,
    * transient connection loss) and only a bounded number of times with capped
    * exponential backoff. Anything else — including a refused claim — surfaces
    * immediately and is never hidden behind a retry loop.
+   *
+   * The claim runs in the *same* transaction as a document-row lock and a fresh
+   * eligibility read, so a status change that lands between the early check and
+   * the claim is caught here (and, if the document is gone, reported as `missing`
+   * rather than inserting an orphan progress row against a deleted document).
    */
-  async function claimWithRetry(claimPayload) {
+  async function claimWithRetry(documentId, claimPayload) {
     for (let attemptIndex = 0; attemptIndex < MAX_CLAIM_RETRIES; attemptIndex += 1) {
       try {
-        return await execute((client) => embeddingBackfillProgressRepository.claimDocument(claimPayload, { client }));
+        return await execute(async (client) => {
+          const locked = await documentsRepository.lockForUpdate(documentId, { client });
+
+          if (!locked) {
+            return { outcome: 'missing' };
+          }
+
+          const document = await documentsRepository.getDocumentById(documentId, { client });
+          const eligibility = evaluateEmbeddingEligibility(document, resolvedEligibilityPolicy);
+
+          if (!eligibility.eligible) {
+            return {
+              outcome: 'ineligible',
+              reason: eligibility.reason,
+              documentStatus: eligibility.documentStatus
+            };
+          }
+
+          const claim = await embeddingBackfillProgressRepository.claimDocument(claimPayload, { client });
+          return { outcome: 'claimed', claim };
+        });
       } catch (error) {
         const { category, retryable } = classifyBackfillError(error);
         const isLastAttempt = attemptIndex === MAX_CLAIM_RETRIES - 1;
@@ -288,7 +345,7 @@ export function createEmbeddingBackfillRunner({
       }
     }
 
-    return null;
+    return { outcome: 'missing' };
   }
 
   async function embedBatch(texts) {
@@ -318,6 +375,8 @@ export function createEmbeddingBackfillRunner({
 
     return {
       documentId,
+      document,
+      documentStatus: typeof document.status === 'string' ? document.status : null,
       totalChunks,
       missingChunkIds,
       embeddedChunks: Math.max(totalChunks - missingChunkIds.length, 0)
@@ -391,6 +450,21 @@ export function createEmbeddingBackfillRunner({
       return { documentId, spaceId, status: 'missing', embeddedChunks: 0, totalChunks: 0 };
     }
 
+    // Early eligibility read: reject an ineligible document before any chunk
+    // scan or provider dispatch. This is re-checked under the document row lock
+    // before the claim and before every batch, so a status change mid-flight is
+    // still caught; this first check just avoids doing useless work.
+    const earlyEligibility = evaluateEmbeddingEligibility(inspection.document, resolvedEligibilityPolicy);
+
+    if (!earlyEligibility.eligible) {
+      return ineligibleResult(documentId, {
+        reason: earlyEligibility.reason,
+        documentStatus: earlyEligibility.documentStatus,
+        embeddedChunks: inspection.embeddedChunks,
+        totalChunks: inspection.totalChunks
+      });
+    }
+
     const { totalChunks, missingChunkIds, embeddedChunks } = inspection;
     const missingSet = new Set(missingChunkIds);
 
@@ -417,7 +491,7 @@ export function createEmbeddingBackfillRunner({
         return { documentId, spaceId, status: 'completed', embeddedChunks: verification.embeddedChunks, totalChunks: verification.totalChunks };
       }
 
-      const claim = await claimWithRetry({
+      const claimOutcome = await claimWithRetry(documentId, {
         spaceId,
         documentId,
         expectedChunkCount: totalChunks,
@@ -425,6 +499,21 @@ export function createEmbeddingBackfillRunner({
         leaseMs,
         startedAt: now()
       });
+
+      if (claimOutcome.outcome === 'missing') {
+        return { documentId, spaceId, status: 'missing', embeddedChunks, totalChunks };
+      }
+
+      if (claimOutcome.outcome === 'ineligible') {
+        return ineligibleResult(documentId, {
+          reason: claimOutcome.reason,
+          documentStatus: claimOutcome.documentStatus,
+          embeddedChunks,
+          totalChunks
+        });
+      }
+
+      const claim = claimOutcome.claim;
 
       if (claim === null) {
         // Either another worker holds a live lease (do not spend tokens), or the
@@ -458,16 +547,56 @@ export function createEmbeddingBackfillRunner({
       for (let index = 0; index < pending.length; index += batchSize) {
         const batch = pending.slice(index, index + batchSize);
 
-        // Renew the lease right before spending tokens. A null result means a
-        // newer claim took over, so abort before dispatching the request.
-        const renewed = await execute((client) => embeddingBackfillProgressRepository.renewClaim({
-          spaceId,
-          documentId,
-          attempt
-        }, { client }));
+        // Gate the batch: under the document row lock, revalidate that the
+        // document still exists and is still eligible, then renew the lease —
+        // all before spending any tokens. A document replaced or made ineligible
+        // mid-flight is caught here, before the next provider call.
+        const batchGate = await execute(async (client) => {
+          const locked = await documentsRepository.lockForUpdate(documentId, { client });
 
-        if (renewed === null) {
+          if (!locked) {
+            return { outcome: 'missing' };
+          }
+
+          const document = await documentsRepository.getDocumentById(documentId, { client });
+          const eligibility = evaluateEmbeddingEligibility(document, resolvedEligibilityPolicy);
+
+          if (!eligibility.eligible) {
+            return {
+              outcome: 'ineligible',
+              reason: eligibility.reason,
+              documentStatus: eligibility.documentStatus
+            };
+          }
+
+          // Renew the lease last: a null result means a newer claim took over,
+          // so abort before dispatching the request.
+          const renewed = await embeddingBackfillProgressRepository.renewClaim({
+            spaceId,
+            documentId,
+            attempt
+          }, { client });
+
+          return renewed === null ? { outcome: 'ownership_lost' } : { outcome: 'renewed' };
+        });
+
+        if (batchGate.outcome === 'ownership_lost') {
           throw new OwnershipLostError();
+        }
+
+        if (batchGate.outcome === 'missing') {
+          throw new DatabaseError(
+            `Document ${documentId} was deleted before the next batch could be dispatched; refusing to continue.`
+          );
+        }
+
+        if (batchGate.outcome === 'ineligible') {
+          return ineligibleResult(documentId, {
+            reason: batchGate.reason,
+            documentStatus: batchGate.documentStatus,
+            embeddedChunks: completedChunkCount,
+            totalChunks
+          });
         }
 
         const { embeddings, usageAvailable, totalTokens } = await embedBatch(batch.map((chunk) => chunk.content));

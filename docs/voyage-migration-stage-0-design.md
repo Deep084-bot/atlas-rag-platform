@@ -190,7 +190,14 @@ Rules:
 - Idempotent: upsert on `(chunk_id, space_id)`; re-running never duplicates.
 - Resumable: `completed` documents are skipped; `in_progress`/`failed` resume.
 - Scoped to `documents.status = 'ready'` only (review H4), so failed/unembedded
-  documents are never mis-ingested.
+  documents are never mis-ingested. Eligibility is enforced by the backfill
+  runner itself, not only by the enumeration query: the runner revalidates the
+  document under its row lock before claiming and again before every provider
+  batch, and returns an explicit `ineligible` result otherwise (see
+  `server/embeddings/embeddingEligibility.js`). The operator/migration path uses
+  the `operator` policy (`ready` only); the inline ingestion/re-embed path uses
+  the `general` policy, which additionally allows `embedding` so an in-flight
+  reprocess can complete. Any other, missing, or unknown status fails closed.
 - Rate budget: honor `Retry-After`, enforce RPM/TPM across the job; use a paid
   tier for production scale (trial 3 RPM / 10K TPM is not viable).
 

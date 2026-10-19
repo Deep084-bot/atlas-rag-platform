@@ -112,3 +112,33 @@ test('reembedDocument returns null when the document does not exist', async () =
   assert.equal(documentsRepository.calls.markReady.length, 0);
   assert.equal(documentsRepository.calls.markFailed.length, 0);
 });
+
+test('reembedDocument returns null and never publishes readiness on an ineligible backfill result', async () => {
+  const documentsRepository = createDocsRepo();
+  let statusProbed = 0;
+
+  const orchestrator = createDocumentOrchestrator({
+    documentsRepository,
+    chunkService: {},
+    embeddingService: {
+      embedDocument: async () => ({
+        documentId: 'doc-1',
+        status: 'ineligible',
+        reason: 'document_status_ineligible',
+        documentStatus: 'failed',
+        embeddedChunks: 0,
+        totalChunks: 3
+      }),
+      getEmbeddingStatus: async () => { statusProbed += 1; return { complete: true }; }
+    },
+    ocrService: null,
+    runInTransaction: (fn) => fn({})
+  });
+
+  const result = await orchestrator.reembedDocument('doc-1');
+
+  assert.equal(result, null);
+  assert.equal(documentsRepository.calls.markReady.length, 0, 'readiness is never published');
+  assert.equal(documentsRepository.calls.markFailed.length, 0, 'an ineligible document is not marked failed');
+  assert.equal(statusProbed, 0, 'completeness is not even probed for an ineligible result');
+});

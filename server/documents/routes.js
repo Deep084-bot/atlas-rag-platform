@@ -400,15 +400,60 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
         });
       }
 
-      const result = await embeddingService.embedDocument(request.params.id);
-
-      if (!result) {
-        return response.status(404).json({
-          error: 'document_not_found'
+      // Manual embedding must run through the orchestrator's lifecycle so that
+      // readiness is published only after the active embedding space has been
+      // authoritatively verified under the document row lock. Calling the
+      // embedding service directly would write vectors without ever moving the
+      // document out of its current status (the H1/H2 divergence).
+      if (typeof documentOrchestrator?.reembedDocument !== 'function') {
+        return response.status(503).json({
+          error: 'document_embed_unavailable',
+          category: 'configuration',
+          message: 'Embedding lifecycle is not configured.'
         });
       }
 
-      return response.json(result);
+      const reembedded = await documentOrchestrator.reembedDocument(request.params.id);
+
+      if (!reembedded) {
+        // The lifecycle published nothing: either the document was deleted under
+        // it, or another worker currently owns the embedding and it is still in
+        // progress. Reconciling those cases avoids reporting a normal hand-off
+        // as success or as a missing document.
+        const current = await documentsRepository.getDocumentById(request.params.id);
+
+        if (!current) {
+          return response.status(404).json({
+            error: 'document_not_found'
+          });
+        }
+
+        return response.status(202).json({
+          documentId: current.id,
+          status: current.status,
+          progress: current.progress ?? null,
+          failureReason: current.failureReason ?? null
+        });
+      }
+
+      if (reembedded.status === 'failed') {
+        return response.status(500).json({
+          error: 'document_embed_failed',
+          category: 'embedding',
+          message: reembedded.failureReason ?? 'Embedding failed.',
+          documentId: reembedded.id,
+          status: reembedded.status,
+          progress: reembedded.progress ?? null,
+          failureReason: reembedded.failureReason ?? null
+        });
+      }
+
+      return response.json({
+        documentId: reembedded.id,
+        status: reembedded.status,
+        progress: reembedded.progress ?? null,
+        failureReason: reembedded.failureReason ?? null
+      });
     } catch (error) {
       const classified = classifyError(error);
       return response.status(classified.statusCode).json({

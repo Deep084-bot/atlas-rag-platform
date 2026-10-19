@@ -75,6 +75,41 @@ Content-Type: multipart/form-data
 
 Ingestion proceeds asynchronously: `uploaded` → processing → `ready` or `failed`.
 
+#### POST /api/documents/:id/embed
+
+Re-runs embedding for an existing document through the ingestion lifecycle. The
+document is marked `ready` only after the active embedding space has been
+authoritatively verified to be complete under the document row lock, so this
+endpoint never publishes readiness on the strength of an embedding call alone.
+
+**Response `200`** — readiness published:
+
+```json
+{
+  "documentId": "uuid",
+  "status": "ready",
+  "progress": 100,
+  "failureReason": null
+}
+```
+
+**Response `202`** — not published yet because another worker is embedding the
+document, or because the document is not in an embeddable state; the returned
+`status` reflects its current progress.
+
+**Eligibility.** The runner only embeds documents the active eligibility policy
+allows (the inline lifecycle allows `embedding` and `ready`). A document in any
+other, missing, or unknown state is never embedded and readiness is never
+published for it, so the endpoint falls back to the `202` reconciliation above
+rather than reporting success.
+
+**Response `404`** — the document does not exist (or was deleted mid-flight).
+
+**Response `500`** — the embedding lifecycle recorded a failure; `failureReason`
+carries the sanitized cause and the document status is `failed`.
+
+**Response `503`** — the embedding lifecycle is not configured on the server.
+
 ### Search
 
 | Method | Path | Description |

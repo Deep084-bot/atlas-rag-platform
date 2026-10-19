@@ -26,7 +26,7 @@ function outcomeFn(value, defaultFn) {
 }
 
 function createHarness({
-  document = { id: 'doc-1' },
+  document = { id: 'doc-1', status: 'ready' },
   chunks,
   missingChunkIds,
   provider,
@@ -40,7 +40,8 @@ function createHarness({
   updateProgressCounts,
   markCompleted,
   markFailed,
-  getProgress
+  getProgress,
+  eligibilityPolicy
 } = {}) {
   const chunkList = chunks ?? [
     { id: 'c1', content: 'one' },
@@ -48,7 +49,7 @@ function createHarness({
     { id: 'c3', content: 'three' }
   ];
   const missing = missingChunkIds ?? chunkList.map((chunk) => chunk.id);
-  const calls = { progress: [], chunkUpserts: [], providerBatches: [], verifications: [], documentLocks: [] };
+  const calls = { progress: [], chunkUpserts: [], providerBatches: [], verifications: [], documentLocks: [], events: [] };
 
   const documentLockFn = documentLock === undefined
     ? () => document
@@ -58,6 +59,7 @@ function createHarness({
     getDocumentById: async () => document,
     async lockForUpdate(documentId, options) {
       calls.documentLocks.push({ documentId, options });
+      calls.events.push({ type: 'documentLock' });
       return documentLockFn(documentId, options);
     }
   };
@@ -81,6 +83,7 @@ function createHarness({
       return upsertResult(args);
     },
     async isDocumentFullyEmbedded(documentId, spaceId, options) {
+      calls.events.push({ type: 'verification' });
       const record = verificationFn(documentId, spaceId, options);
       calls.verifications.push(record);
       return record;
@@ -153,6 +156,7 @@ function createHarness({
     embeddingProvider: recordedProvider,
     space: VOYAGE_SPACE,
     batchSize,
+    eligibilityPolicy,
     runInTransaction: runInTransactionImpl,
     logger: { error() {}, log() {} }
   });
@@ -576,16 +580,23 @@ test('the document row lock is taken on the completion transaction before verifi
   await harness.runner.backfillDocument('doc-1');
 
   const locks = harness.calls.documentLocks;
-  assert.equal(locks.length, 1, 'exactly one completion-time document lock is taken');
-  assert.equal(locks[0].documentId, 'doc-1');
-  assert.equal(locks[0].options.client, harness.fakeClient, 'the lock uses the same transaction client as verification');
+  assert.ok(locks.length >= 1, 'the runner takes the document row lock');
+
+  const lastLockIndex = harness.calls.events.findLastIndex((event) => event.type === 'documentLock');
+  const verifyIndex = harness.calls.events.findIndex((event) => event.type === 'verification');
+  assert.ok(lastLockIndex >= 0 && verifyIndex >= 0, 'both a document lock and verification were recorded');
+  assert.ok(lastLockIndex < verifyIndex, 'the completion lock is acquired before verification runs');
+
+  const completionLock = locks.at(-1);
+  assert.equal(completionLock.documentId, 'doc-1');
+  assert.equal(completionLock.options.client, harness.fakeClient, 'the lock uses the same transaction client as verification');
 });
 
 test('completion is refused when the document is gone by the time the lock is taken', async () => {
   const harness = createHarness({
     chunks: [{ id: 'c1', content: 'one' }],
     missingChunkIds: [],
-    document: { id: 'doc-1' },
+    document: { id: 'doc-1', status: 'ready' },
     documentLock: null,
     provider: { embedMany: async () => { throw new Error('should not be called'); } }
   });
@@ -1126,4 +1137,195 @@ test('provider calls are never dispatched while a transaction is open', async ()
   assert.equal(result.status, 'completed');
   assert.equal(harness.providerBatches.length, 2, 'both batches were embedded');
   assert.equal(providerCalledInTransaction, false, 'the provider is only ever called outside the transaction');
+});
+
+// ---------------------------------------------------------------------------
+// Stage 3G Step 2: document eligibility (general runner vs operator path)
+// ---------------------------------------------------------------------------
+
+test('backfillDocument returns ineligible without touching the provider for non-embeddable statuses', async () => {
+  for (const status of ['failed', 'uploaded', 'extracting', 'ocr', 'chunking', 'queued', 'bogus']) {
+    const harness = createHarness({
+      document: { id: 'doc-1', status },
+      chunks: [{ id: 'c1', content: 'one' }],
+      missingChunkIds: ['c1'],
+      provider: { embedMany: async () => { throw new Error('the provider must not be called'); } }
+    });
+
+    const result = await harness.runner.backfillDocument('doc-1');
+
+    assert.equal(result.status, 'ineligible', `status "${status}" must be ineligible`);
+    assert.equal(result.reason, 'document_status_ineligible', `stable reason for "${status}"`);
+    assert.equal(result.documentStatus, status);
+    assert.equal(harness.providerBatches.length, 0, `no tokens are spent for "${status}"`);
+    assert.equal(harness.progressCalls('claimDocument').length, 0, `no claim is taken for "${status}"`);
+    assert.equal(harness.progressCalls('markCompleted').length, 0);
+  }
+});
+
+test('backfillDocument returns ineligible when a document has no status at all', async () => {
+  const harness = createHarness({
+    document: { id: 'doc-1' },
+    chunks: [{ id: 'c1', content: 'one' }],
+    missingChunkIds: ['c1'],
+    provider: { embedMany: async () => { throw new Error('the provider must not be called'); } }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'ineligible');
+  assert.equal(result.reason, 'document_status_ineligible');
+  assert.equal(result.documentStatus, null);
+  assert.equal(harness.providerBatches.length, 0);
+});
+
+test('backfillDocument reports a missing document without calling the provider', async () => {
+  const harness = createHarness({
+    document: null,
+    provider: { embedMany: async () => { throw new Error('the provider must not be called'); } }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'missing');
+  assert.equal(result.embeddedChunks, 0);
+  assert.equal(result.totalChunks, 0);
+  assert.equal(harness.providerBatches.length, 0);
+});
+
+test('backfillDocument still embeds a document in the embedding state (inline ingestion/re-embed)', async () => {
+  const harness = createHarness({
+    document: { id: 'doc-1', status: 'embedding' },
+    chunks: [{ id: 'c1', content: 'one' }],
+    missingChunkIds: ['c1'],
+    provider: { embedMany: async (texts) => texts.map(() => vec()) }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'completed');
+  assert.equal(harness.providerBatches.length, 1);
+  assert.equal(harness.progressCalls('markCompleted').length, 1);
+});
+
+test('an operator-policy runner refuses the embedding state but allows ready', async () => {
+  const blocked = createHarness({
+    eligibilityPolicy: 'operator',
+    document: { id: 'doc-1', status: 'embedding' },
+    chunks: [{ id: 'c1', content: 'one' }],
+    missingChunkIds: ['c1'],
+    provider: { embedMany: async () => { throw new Error('the provider must not be called'); } }
+  });
+
+  const blockedResult = await blocked.runner.backfillDocument('doc-1');
+  assert.equal(blockedResult.status, 'ineligible');
+  assert.equal(blockedResult.reason, 'document_status_ineligible');
+  assert.equal(blockedResult.documentStatus, 'embedding');
+  assert.equal(blocked.providerBatches.length, 0);
+
+  const allowed = createHarness({
+    eligibilityPolicy: 'operator',
+    document: { id: 'doc-1', status: 'ready' },
+    chunks: [{ id: 'c1', content: 'one' }],
+    missingChunkIds: ['c1'],
+    provider: { embedMany: async (texts) => texts.map(() => vec()) }
+  });
+
+  const allowedResult = await allowed.runner.backfillDocument('doc-1');
+  assert.equal(allowedResult.status, 'completed');
+  assert.equal(allowed.providerBatches.length, 1);
+});
+
+test('construction rejects an unknown eligibility policy', () => {
+  assert.throws(
+    () => createEmbeddingBackfillRunner({
+      space: VOYAGE_SPACE,
+      documentsRepository: {},
+      embeddingRepository: {},
+      chunkEmbeddingRepository: {},
+      embeddingBackfillProgressRepository: {},
+      embeddingProvider: { embedMany: async () => [] },
+      eligibilityPolicy: 'migration'
+    }),
+    ValidationError
+  );
+});
+
+test('a document that becomes ineligible before the claim is not embedded', async () => {
+  const doc = { id: 'doc-1', status: 'ready' };
+  let locks = 0;
+
+  const harness = createHarness({
+    document: doc,
+    documentLock: () => {
+      locks += 1;
+      doc.status = 'failed';
+      return doc;
+    },
+    chunks: [{ id: 'c1', content: 'one' }],
+    missingChunkIds: ['c1'],
+    provider: { embedMany: async () => { throw new Error('the provider must not be called'); } }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'ineligible');
+  assert.equal(result.reason, 'document_status_ineligible');
+  assert.equal(result.documentStatus, 'failed');
+  assert.equal(locks, 1, 'only the claim-time lock was taken');
+  assert.equal(harness.providerBatches.length, 0);
+  assert.equal(harness.progressCalls('claimDocument').length, 0, 'no claim is taken for an ineligible document');
+});
+
+test('a document that becomes ineligible between batches stops before the next provider call', async () => {
+  const doc = { id: 'doc-1', status: 'ready' };
+  let locks = 0;
+
+  const harness = createHarness({
+    document: doc,
+    documentLock: () => {
+      locks += 1;
+      // lock #1 = claim gate, #2 = first batch gate, #3 = second batch gate.
+      if (locks === 3) {
+        doc.status = 'failed';
+      }
+      return doc;
+    },
+    batchSize: 1,
+    chunks: [{ id: 'c1', content: 'one' }, { id: 'c2', content: 'two' }],
+    missingChunkIds: ['c1', 'c2'],
+    provider: { embedMany: async (texts) => texts.map(() => vec()) }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'ineligible');
+  assert.equal(result.documentStatus, 'failed');
+  assert.equal(result.embeddedChunks, 1, 'the first batch was already committed');
+  assert.equal(harness.providerBatches.length, 1, 'only the first batch reached the provider');
+  assert.equal(harness.progressCalls('markCompleted').length, 0, 'no completion is published');
+  assert.equal(harness.progressCalls('claimDocument').length, 1);
+});
+
+test('a stale worker whose renewed claim is refused cannot publish completion', async () => {
+  let renewals = 0;
+
+  const harness = createHarness({
+    batchSize: 1,
+    chunks: [{ id: 'c1', content: 'one' }, { id: 'c2', content: 'two' }],
+    missingChunkIds: ['c1', 'c2'],
+    renewClaim: () => {
+      renewals += 1;
+      // First batch renews fine; a newer claim took over before the second.
+      return renewals === 1 ? { status: 'in_progress' } : null;
+    },
+    getProgress: { status: 'in_progress' },
+    provider: { embedMany: async (texts) => texts.map(() => vec()) }
+  });
+
+  const result = await harness.runner.backfillDocument('doc-1');
+
+  assert.equal(result.status, 'skipped');
+  assert.equal(harness.providerBatches.length, 1, 'the second batch is never dispatched');
+  assert.equal(harness.progressCalls('markCompleted').length, 0, 'a stale worker never publishes completion');
 });
