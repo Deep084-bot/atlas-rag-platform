@@ -187,7 +187,7 @@ export function createDocumentsRouter({ storageProvider, documentsRepository, ch
           }
         }
 
-        void documentOrchestrator.startDocumentIngestion(persistedDocument.id);
+        await documentOrchestrator.startDocumentIngestion(persistedDocument.id);
 
         return response.status(201).json({
           document: stripInternalDocumentFields(persistedDocument)

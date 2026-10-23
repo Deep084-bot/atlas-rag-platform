@@ -237,4 +237,5 @@ app.use((_request, response) => {
   });
 });
 
+export { documentOrchestrator };
 export default app;

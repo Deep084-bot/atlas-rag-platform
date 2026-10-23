@@ -1041,7 +1041,7 @@ export function DocumentAttachModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.txt,.md"
+                accept=".pdf,.txt,.md"
                 onChange={handleFileSelect}
                 className="hidden"
                 aria-label="Choose file to upload"
@@ -1082,7 +1082,7 @@ export function DocumentAttachModal({
                     </button>
                   </p>
                   <p className="mt-2 text-xs text-slate-500">
-                    Supported: PDF, DOCX, TXT, MD
+                    Supported: PDF, TXT, MD
                   </p>
                 </>
               )}

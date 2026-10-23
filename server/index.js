@@ -1,5 +1,5 @@
 import "dotenv/config";
-import app from "./app.js";
+import app, { documentOrchestrator } from "./app.js";
 import { getPool } from "./db.js";
 import { startReconcileScheduler } from "./documents/reconcileScheduler.js";
 
@@ -32,7 +32,7 @@ const server = app.listen(port, () => {
   }
 });
 
-function shutdown(signal) {
+async function shutdown(signal) {
   console.log('[atlas] %s received, shutting down gracefully', signal);
 
   if (reconcileScheduler) {
@@ -40,19 +40,35 @@ function shutdown(signal) {
     reconcileScheduler = null;
   }
 
+  const forceTimer = setTimeout(() => {
+    console.error('[atlas] forced shutdown after timeout');
+    process.exit(1);
+  }, 10_000);
+
+  if (typeof forceTimer.unref === 'function') {
+    forceTimer.unref();
+  }
+
+  try {
+    await documentOrchestrator.drainIngestion();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[atlas] Failed to drain ingestion:', message);
+  }
+
   server.close(() => {
+    clearTimeout(forceTimer);
     console.log('[atlas] HTTP server closed');
     process.exit(0);
   });
-
-  setTimeout(() => {
-    console.error('[atlas] forced shutdown after timeout');
-    process.exit(1);
-  }, 10_000).unref();
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});
 
 process.on('unhandledRejection', (reason) => {
   console.error('[atlas] Unhandled Rejection:', reason instanceof Error ? reason.stack : reason);

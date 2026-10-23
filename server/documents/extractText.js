@@ -17,7 +17,16 @@ export function validateDocumentUpload({ mimeType, originalName }) {
     return { fileType: 'txt' };
   }
 
-  throw new UploadValidationError('Unsupported file type. Only PDF and TXT files are allowed.');
+  if (
+    mimeType === 'text/markdown'
+    || mimeType === 'text/x-markdown'
+    || lowerName.endsWith('.md')
+    || lowerName.endsWith('.markdown')
+  ) {
+    return { fileType: 'md' };
+  }
+
+  throw new UploadValidationError('Unsupported file type. Only PDF, TXT, and Markdown files are allowed.');
 }
 
 export async function extractTextFromUpload({ buffer, mimeType, originalName }) {
@@ -30,17 +39,19 @@ export async function extractTextFromUpload({ buffer, mimeType, originalName }) 
     return { fileType, extractedText };
   }
 
-  if (fileType === 'txt') {
+  if (fileType === 'txt' || fileType === 'md') {
     const extractedText = normalizeText(buffer.toString('utf8'));
 
     if (extractedText.length === 0) {
       throw new UploadValidationError(
-        'This text file contains no readable content.'
+        fileType === 'md'
+          ? 'This Markdown file contains no readable content.'
+          : 'This text file contains no readable content.'
       );
     }
 
     return { fileType, extractedText };
   }
 
-  throw new UploadValidationError('Unsupported file type. Only PDF and TXT files are allowed.');
+  throw new UploadValidationError('Unsupported file type. Only PDF, TXT, and Markdown files are allowed.');
 }

@@ -280,128 +280,189 @@ export function createDocumentOrchestrator({
     }
   }
 
+  const inFlightIngestions = new Set();
+
+  async function claimDocumentForIngestion(documentId) {
+    const document = await documentsRepository.getDocumentById(documentId);
+
+    if (!document) {
+      return { outcome: 'missing' };
+    }
+
+    if (document.status === 'ready') {
+      return { outcome: 'settled', document };
+    }
+
+    if (['extracting', 'ocr', 'chunking', 'embedding'].includes(document.status)) {
+      return { outcome: 'settled', document };
+    }
+
+    const processingStartedAt = new Date().toISOString();
+
+    await documentsRepository.updateStatus(documentId, {
+      status: 'extracting',
+      progress: 30,
+      failureReason: null,
+      processingStartedAt
+    });
+
+    return {
+      outcome: 'claimed',
+      document: { ...document, status: 'extracting', progress: 30 },
+      processingStartedAt
+    };
+  }
+
+  async function runClaimedIngestion(documentId, document, processingStartedAt) {
+    try {
+      const buffer = await readFile(document.storagePath);
+      const extracted = await extractTextFromUpload({
+        buffer,
+        mimeType: mapFileTypeToMimeType(document.fileType),
+        originalName: document.fileName
+      });
+
+      let finalText = extracted.extractedText;
+      let finalFileType = extracted.fileType;
+
+      console.log('[OCR] Extraction result', {
+        documentId,
+        extractedTextLength: extracted.extractedText.length,
+        fileType: extracted.fileType
+      });
+
+      if (
+        extracted.fileType === 'pdf'
+        && extracted.extractedText.length < OCR_TEXT_MIN_LENGTH
+        && ocrService
+      ) {
+        if (document.file_size_bytes > MAX_OCR_FILE_SIZE) {
+          throw new Error(
+            `This scanned PDF is too large for OCR (max ${MAX_OCR_FILE_SIZE / 1024 / 1024} MB).`
+          );
+        }
+
+        await documentsRepository.updateStatus(documentId, {
+          status: 'ocr',
+          progress: 45,
+          failureReason: null,
+          processingStartedAt
+        });
+
+        console.log('[OCR] Starting OCR', { documentId });
+        const ocrText = await ocrService.ocrPdf(buffer, { maxPages: MAX_OCR_PAGES });
+        console.log('[OCR] OCR complete', {
+          documentId,
+          textLength: ocrText ? ocrText.length : 0
+        });
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[OCR TEXT SAMPLE]');
+          console.log(ocrText ? ocrText.slice(0, 2000) : '(empty)');
+        }
+
+        if (!ocrText) {
+          throw new Error('OCR was unable to extract text from this PDF. Ensure pages contain readable text.');
+        }
+
+        finalText = ocrText;
+      }
+
+      const ocrQuality = computeOcrQuality(finalText);
+      console.log('[OCR QUALITY]', {
+        documentId,
+        score: ocrQuality.score.toFixed(4),
+        alphaRatio: ocrQuality.alphaRatio.toFixed(4),
+        avgWordLength: ocrQuality.avgWordLength.toFixed(2),
+        dictRatio: ocrQuality.dictRatio.toFixed(4),
+        printableRatio: ocrQuality.printableRatio.toFixed(4),
+        lowQuality: ocrQuality.score < OCR_QUALITY_THRESHOLD,
+        textLength: finalText.length
+      });
+
+      await documentsRepository.updateOcrQuality(documentId, ocrQuality.score);
+
+      await documentsRepository.updateDocumentText(documentId, {
+        extractedText: finalText,
+        fileType: finalFileType
+      });
+
+      await documentsRepository.updateStatus(documentId, {
+        status: 'chunking',
+        progress: 60,
+        failureReason: null,
+        processingStartedAt
+      });
+
+      await chunkService.chunkDocument(documentId);
+
+      return await embedDocumentAndMarkReady(documentId, processingStartedAt);
+    } catch (error) {
+      return await persistFailure(documentId, error);
+    }
+  }
+
   return {
     setEmbeddingService(nextEmbeddingService) {
       activeEmbeddingService = nextEmbeddingService;
     },
 
     async startDocumentIngestion(documentId) {
-      void this.processDocument(documentId).catch((error) => {
-        const message = error instanceof Error ? error.message : 'Document ingestion failed.';
-        console.error(`Document ingestion failed for ${documentId}: ${message}`);
-      });
-    },
+      let claim;
 
-    async processDocument(documentId) {
-      const document = await documentsRepository.getDocumentById(documentId);
+      try {
+        claim = await claimDocumentForIngestion(documentId);
+      } catch (error) {
+        try {
+          await persistFailure(documentId, error);
+        } catch (persistError) {
+          const message = persistError instanceof Error ? persistError.message : 'Failed to persist document failure.';
+          console.error(`Document ingestion failed for ${documentId}: ${message}`);
+        }
 
-      if (!document) {
         return null;
       }
 
-      if (document.status === 'ready') {
-        return document;
+      if (claim.outcome !== 'claimed') {
+        return claim.document ?? null;
       }
 
-      if (['extracting', 'ocr', 'chunking', 'embedding'].includes(document.status)) {
-        return document;
-      }
+      const task = runClaimedIngestion(documentId, claim.document, claim.processingStartedAt)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Document ingestion failed.';
+          console.error(`Document ingestion failed for ${documentId}: ${message}`);
+        })
+        .finally(() => {
+          inFlightIngestions.delete(task);
+        });
 
-      const processingStartedAt = new Date().toISOString();
+      inFlightIngestions.add(task);
+
+      return claim.document;
+    },
+
+    async processDocument(documentId) {
+      let claim;
 
       try {
-        await documentsRepository.updateStatus(documentId, {
-          status: 'extracting',
-          progress: 30,
-          failureReason: null,
-          processingStartedAt
-        });
-
-        const buffer = await readFile(document.storagePath);
-        const extracted = await extractTextFromUpload({
-          buffer,
-          mimeType: mapFileTypeToMimeType(document.fileType),
-          originalName: document.fileName
-        });
-
-        let finalText = extracted.extractedText;
-        let finalFileType = extracted.fileType;
-
-        console.log('[OCR] Extraction result', {
-          documentId,
-          extractedTextLength: extracted.extractedText.length,
-          fileType: extracted.fileType
-        });
-
-        if (
-          extracted.fileType === 'pdf'
-          && extracted.extractedText.length < OCR_TEXT_MIN_LENGTH
-          && ocrService
-        ) {
-          if (document.file_size_bytes > MAX_OCR_FILE_SIZE) {
-            throw new Error(
-              `This scanned PDF is too large for OCR (max ${MAX_OCR_FILE_SIZE / 1024 / 1024} MB).`
-            );
-          }
-
-          await documentsRepository.updateStatus(documentId, {
-            status: 'ocr',
-            progress: 45,
-            failureReason: null,
-            processingStartedAt
-          });
-
-          console.log('[OCR] Starting OCR', { documentId });
-          const ocrText = await ocrService.ocrPdf(buffer, { maxPages: MAX_OCR_PAGES });
-          console.log('[OCR] OCR complete', {
-            documentId,
-            textLength: ocrText ? ocrText.length : 0
-          });
-
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[OCR TEXT SAMPLE]');
-            console.log(ocrText ? ocrText.slice(0, 2000) : '(empty)');
-          }
-
-          if (!ocrText) {
-            throw new Error('OCR was unable to extract text from this PDF. Ensure pages contain readable text.');
-          }
-
-          finalText = ocrText;
-        }
-
-        const ocrQuality = computeOcrQuality(finalText);
-        console.log('[OCR QUALITY]', {
-          documentId,
-          score: ocrQuality.score.toFixed(4),
-          alphaRatio: ocrQuality.alphaRatio.toFixed(4),
-          avgWordLength: ocrQuality.avgWordLength.toFixed(2),
-          dictRatio: ocrQuality.dictRatio.toFixed(4),
-          printableRatio: ocrQuality.printableRatio.toFixed(4),
-          lowQuality: ocrQuality.score < OCR_QUALITY_THRESHOLD,
-          textLength: finalText.length
-        });
-
-        await documentsRepository.updateOcrQuality(documentId, ocrQuality.score);
-
-        await documentsRepository.updateDocumentText(documentId, {
-          extractedText: finalText,
-          fileType: finalFileType
-        });
-
-        await documentsRepository.updateStatus(documentId, {
-          status: 'chunking',
-          progress: 60,
-          failureReason: null,
-          processingStartedAt
-        });
-
-        await chunkService.chunkDocument(documentId);
-
-        return await embedDocumentAndMarkReady(documentId, processingStartedAt);
+        claim = await claimDocumentForIngestion(documentId);
       } catch (error) {
         return await persistFailure(documentId, error);
       }
+
+      if (claim.outcome !== 'claimed') {
+        return claim.document ?? null;
+      }
+
+      return await runClaimedIngestion(documentId, claim.document, claim.processingStartedAt);
+    },
+
+    async drainIngestion() {
+      if (inFlightIngestions.size === 0) {
+        return;
+      }
+
+      await Promise.allSettled([...inFlightIngestions]);
     },
 
     async reembedDocument(documentId) {
