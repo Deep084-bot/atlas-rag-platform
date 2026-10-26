@@ -6,11 +6,18 @@ export class ValidationError extends Error {
 }
 
 export class ProviderError extends Error {
-  constructor(message, { provider = 'provider', statusCode = 502, retryable = false, cause = null } = {}) {
+  constructor(message, {
+    provider = 'provider',
+    statusCode = 502,
+    upstreamStatusCode = null,
+    retryable = false,
+    cause = null
+  } = {}) {
     super(message);
     this.name = 'ProviderError';
     this.provider = provider;
     this.statusCode = statusCode;
+    this.upstreamStatusCode = upstreamStatusCode;
     this.retryable = retryable;
 
     if (cause) {

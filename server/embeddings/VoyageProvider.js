@@ -253,19 +253,16 @@ export class VoyageProvider extends EmbeddingProvider {
     });
 
     if (!response.ok) {
-      let detail = '';
-
       try {
-        detail = (await response.text()).slice(0, 300);
+        await response.body?.cancel?.();
       } catch {
-        detail = response.statusText ?? '';
+        // Ignore body cleanup failures.
       }
 
       throw new ProviderError(`Voyage request failed with status ${response.status}.`, {
         provider: 'Voyage',
         statusCode: response.status >= 500 ? 502 : response.status,
-        retryable: response.status >= 500,
-        cause: detail ? new Error(detail) : null
+        retryable: response.status >= 500
       });
     }
 

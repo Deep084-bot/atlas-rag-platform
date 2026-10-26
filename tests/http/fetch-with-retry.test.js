@@ -194,6 +194,7 @@ test('throws after exhausting retries on persistent 5xx', async () => {
 
   assert.ok(result.error instanceof ProviderError);
   assert.equal(result.error.statusCode, 502);
+  assert.equal(result.error.upstreamStatusCode, null);
   assert.equal(result.error.retryable, true);
   assert.deepEqual(result.delays, [10, 20]);
 });

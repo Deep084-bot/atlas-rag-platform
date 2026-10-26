@@ -342,7 +342,6 @@ export function createChatService({
           console.log('[DOC CHUNKS RESULT]', {
             fileName: matchedDoc?.fileName,
             chunkCount: sources.length,
-            firstChunk: sources[0]?.chunkText?.slice(0, 150) ?? '(empty)'
           });
         } else {
           const retrieval = await retrievalService.retrieve(normalizedMessage, {
@@ -362,17 +361,7 @@ export function createChatService({
 
       const isSummary = isSummaryQuery && (docCount > 0 || explicitDocMatch);
 
-      if (sources.length > 0) {
-        sources.forEach((chunk, index) => {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
-              index,
-              chunk.fileName || '?',
-              chunk.similarity || 0,
-              (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
-          }
-        });
-      }
+      // RAG chunk contents are not logged to avoid leaking document text.
 
       console.log('[atlas]', {
         query: normalizedMessage,
@@ -565,7 +554,6 @@ export function createChatService({
           console.log('[DOC CHUNKS RESULT]', {
             fileName: matchedDoc?.fileName,
             chunkCount: sources.length,
-            firstChunk: sources[0]?.chunkText?.slice(0, 150) ?? '(empty)'
           });
         } else {
           const retrieval = await retrievalService.retrieve(normalizedMessage, {
@@ -585,17 +573,7 @@ export function createChatService({
 
       const isSummary = isSummaryQuery && (docCount > 0 || explicitDocMatch);
 
-      if (sources.length > 0) {
-        sources.forEach((chunk, index) => {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[RAG CHUNK %d] fileName=%s similarity=%f text="%s"',
-              index,
-              chunk.fileName || '?',
-              chunk.similarity || 0,
-              (chunk.chunkText || '').slice(0, 300).replace(/\n/g, ' '));
-          }
-        });
-      }
+      // RAG chunk contents are not logged to avoid leaking document text.
 
       console.log('[atlas]', {
         query: normalizedMessage,

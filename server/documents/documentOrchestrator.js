@@ -13,7 +13,8 @@ const HOSTED_PROVIDERS = new Set(['Hugging Face', 'Voyage']);
 
 function describeHostedProviderError(error) {
   const provider = error.provider;
-  const status = Number.isFinite(error.statusCode) ? error.statusCode : null;
+  const upstreamStatus = Number.isFinite(error.upstreamStatusCode) ? error.upstreamStatusCode : null;
+  const status = upstreamStatus ?? (Number.isFinite(error.statusCode) ? error.statusCode : null);
 
   if (status === 401 || status === 403) {
     return `${provider} authentication failed (status ${status}). Check the provider API key and permissions.`;
@@ -268,6 +269,16 @@ export function createDocumentOrchestrator({
 
   async function persistFailure(documentId, error) {
     const failureReason = sanitizeFailureReason(error);
+
+    if (error instanceof ProviderError) {
+      console.warn('[ingestion] provider failure', {
+        documentId,
+        provider: error.provider,
+        upstreamStatusCode: Number.isFinite(error.upstreamStatusCode) ? error.upstreamStatusCode : null,
+        statusCode: Number.isFinite(error.statusCode) ? error.statusCode : null,
+        retryable: Boolean(error.retryable)
+      });
+    }
 
     try {
       return await documentsRepository.markFailed(documentId, {

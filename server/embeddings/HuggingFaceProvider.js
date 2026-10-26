@@ -125,19 +125,16 @@ export class HuggingFaceProvider extends EmbeddingProvider {
         });
 
         if (!response.ok) {
-            let errorText = '';
-
             try {
-                errorText = await response.text();
+                await response.body?.cancel?.();
             } catch {
-                errorText = response.statusText ?? '';
+                // Ignore body cleanup failures.
             }
 
-            const detail = errorText ? `: ${errorText.slice(0, 300)}` : '';
-
-            throw new ProviderError(`Hugging Face request failed with status ${response.status}${detail}`, {
+            throw new ProviderError(`Hugging Face request failed with status ${response.status}.`, {
                 provider: 'Hugging Face',
                 statusCode: 502,
+                upstreamStatusCode: response.status,
                 retryable: response.status >= 500
             });
         }

@@ -66,7 +66,7 @@ test('search propagates provider failure without converting to generic error', a
   const { ProviderError } = await import('../../server/errors.js');
   const fakeProvider = {
     embed: async () => {
-      throw new ProviderError('Hugging Face request failed', { provider: 'Hugging Face', statusCode: 402 });
+      throw new ProviderError('Hugging Face request failed with status 402.', { provider: 'Hugging Face', statusCode: 502, upstreamStatusCode: 402 });
     }
   };
   const fakeRepo = {
@@ -77,7 +77,7 @@ test('search propagates provider failure without converting to generic error', a
   const service = createSearchService({ embeddingProvider: fakeProvider, searchRepository: fakeRepo });
   await assert.rejects(
     async () => service.search('hello', { userId: 'u1' }),
-    (err) => err.name === 'ProviderError' && err.statusCode === 402
+    (err) => err.name === 'ProviderError' && err.statusCode === 502 && err.upstreamStatusCode === 402
   );
 });
 

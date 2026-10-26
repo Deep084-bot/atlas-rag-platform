@@ -117,15 +117,13 @@ export class GroqProvider extends GenerationProvider {
     });
 
     if (!response.ok) {
-      let errorBody = '';
-
       try {
-        errorBody = await response.text();
+        await response.body?.cancel?.();
       } catch {
-        errorBody = response.statusText;
+        // Ignore body cleanup failures.
       }
 
-      throw new ProviderError(`Groq streaming request failed (${response.status}): ${errorBody}`, {
+      throw new ProviderError(`Groq streaming request failed with status ${response.status}.`, {
         provider: 'Groq',
         statusCode: 502,
         retryable: response.status >= 500
