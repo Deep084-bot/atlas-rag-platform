@@ -69,17 +69,18 @@ export async function generateAnswer({ question }) {
   });
 }
 
-export async function sendChatMessage({ conversationId, message }) {
+export async function sendChatMessage({ conversationId, message, documentIds }) {
   return requestJson('/api/chat', {
     method: 'POST',
     body: {
       conversationId: conversationId || undefined,
-      message
+      message,
+      documentIds
     }
   });
 }
 
-export function sendChatMessageStream({ conversationId, message, signal, onMeta, onSources, onToken, onDone, onError }) {
+export function sendChatMessageStream({ conversationId, message, documentIds, signal, onMeta, onSources, onToken, onDone, onError }) {
   return new Promise((resolve, reject) => {
     let cancelled = false;
 
@@ -103,7 +104,8 @@ export function sendChatMessageStream({ conversationId, message, signal, onMeta,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         conversationId: conversationId || undefined,
-        message
+        message,
+        documentIds
       }),
       signal,
       credentials: 'include'

@@ -20,6 +20,9 @@ export function ChatComposer({
   isCreatingConversation,
   onAttach,
   onCollections,
+  attachments = [],
+  removableAttachmentIds = [],
+  onRemoveAttachment,
   focusTrigger = 0,
 }) {
   const textareaRef = useRef(null);
@@ -28,6 +31,8 @@ export function ChatComposer({
   const [commandSearch, setCommandSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [focused, setFocused] = useState(false);
+
+  const removableIds = new Set(removableAttachmentIds);
 
   const showCommandMenu = commandOpen && message.startsWith('/');
 
@@ -183,6 +188,46 @@ export function ChatComposer({
             : 'border-white/10 hover:border-white/20'
         }`}
       >
+        {attachments.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto px-4 pt-3" aria-label="Attached documents">
+            {attachments.map((document) => {
+              const fileName = document.fileName ?? 'Document';
+              const statusColor = document.status === 'ready'
+                ? 'bg-emerald-400'
+                : document.status === 'failed'
+                  ? 'bg-rose-400'
+                  : 'bg-amber-400';
+              const removable = removableIds.has(document.id);
+
+              return (
+                <span
+                  key={document.id}
+                  title={fileName}
+                  className="flex max-w-[220px] shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-300"
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span className="truncate">{fileName}</span>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor}`} />
+                  {removable && onRemoveAttachment && (
+                    <button
+                      type="button"
+                      onClick={() => onRemoveAttachment(document.id)}
+                      className="shrink-0 rounded p-0.5 text-slate-500 transition hover:bg-white/10 hover:text-white"
+                      aria-label={`Remove ${fileName}`}
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           value={message}

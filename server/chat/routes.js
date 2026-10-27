@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 
 import { classifyError } from '../errors.js';
+import { parseDocumentIds, selectMessageAttachments } from './messageAttachments.js';
 
 function authenticate(request, response) {
   const userId = request.user?.id;
@@ -32,7 +33,8 @@ export function createChatRouter({ chatService, conversationRepository, conversa
       const result = await chatService.chat({
         conversationId: request.body?.conversationId,
         message: request.body?.message,
-        userId
+        userId,
+        documentIds: request.body?.documentIds
       });
 
       if (!result) {
@@ -79,6 +81,16 @@ export function createChatRouter({ chatService, conversationRepository, conversa
         return;
       }
 
+      const requestedDocumentIds = parseDocumentIds(request.body?.documentIds);
+
+      if (requestedDocumentIds === null) {
+        return response.status(400).json({
+          error: 'chat_stream_validation_failed',
+          category: 'validation',
+          message: 'documentIds must be an array of document ids.'
+        });
+      }
+
       const chatInfo = await chatService.chatStream({
         conversationId: request.body?.conversationId,
         message: request.body?.message,
@@ -93,6 +105,11 @@ export function createChatRouter({ chatService, conversationRepository, conversa
           message: 'Conversation not found.'
         });
       }
+
+      const conversationDocuments = requestedDocumentIds.length > 0
+        ? await conversationDocumentRepository.listByConversation(chatInfo.conversationId, userId)
+        : [];
+      const userAttachments = selectMessageAttachments(conversationDocuments, requestedDocumentIds);
 
       response.setHeader('Content-Type', 'text/event-stream');
       response.setHeader('Cache-Control', 'no-cache');
@@ -159,7 +176,8 @@ export function createChatRouter({ chatService, conversationRepository, conversa
           userId,
           userMessage: chatInfo.normalizedMessage,
           assistantMessage: assistantContent,
-          assistantSources: chatInfo.sources
+          assistantSources: chatInfo.sources,
+          userAttachments
         });
 
         if (chatInfo.isNewConversation) {
@@ -452,7 +470,7 @@ export function createChatRouter({ chatService, conversationRepository, conversa
         return response.status(400).json({
           error: 'attachment_failed',
           category: 'validation',
-          message: 'Document could not be attached. It may already be attached, or the conversation or document could not be found.'
+          message: 'Document could not be attached. It may already be attached, failed processing, or the conversation or document could not be found.'
         });
       }
 

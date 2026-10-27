@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   role text NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content text NOT NULL,
   citations jsonb NOT NULL DEFAULT '[]'::jsonb,
+  attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
   model text,
   prompt_tokens integer,
   completion_tokens integer,

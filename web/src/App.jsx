@@ -29,6 +29,14 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/app/conversations/:conversationId"
+            element={
+              <ProtectedRoute>
+                <WorkspacePage />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </ErrorBoundary>
       <Toaster

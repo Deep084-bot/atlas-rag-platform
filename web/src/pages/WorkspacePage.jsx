@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { ChatComposer } from '../components/ChatComposer.jsx';
 import { ChatTranscript } from '../components/ChatTranscript.jsx';
@@ -9,9 +10,20 @@ import { SourcesList } from '../components/SourcesList.jsx';
 import { Sidebar } from '../components/Sidebar.jsx';
 import { AppNavbar } from '../components/AppNavbar.jsx';
 import { requestJson } from '../api/client.js';
+import { getConversationDocuments } from '../api/atlasApi.js';
 import { useDocuments } from '../hooks/useDocuments.js';
 import { useChat } from '../hooks/useChat.js';
 import { useCollections } from '../hooks/useCollections.js';
+import {
+  collectPendingDocumentIds,
+  pendingAttachmentDocuments,
+} from '../hooks/attachmentSelection.js';
+import {
+  APP_HOME_PATH,
+  conversationPath,
+  getConversationRouteAction,
+  isConversationNotFound,
+} from '../hooks/conversationRouting.js';
 import { DocumentAttachModal } from '../components/DocumentAttachModal.jsx';
 
 function StatusPill({ status, children }) {
@@ -105,8 +117,10 @@ export function WorkspacePage() {
   const documents = useDocuments();
   const chat = useChat();
   const { collections, createCollection, renameCollection, deleteCollection, addDocumentsToCollection, removeDocumentFromCollection } = useCollections();
+  const navigate = useNavigate();
+  const { conversationId: routeConversationId = '' } = useParams();
 
-  const [workspaceMode, setWorkspaceMode] = useState('home');
+  const [workspaceMode, setWorkspaceMode] = useState(routeConversationId ? 'conversation' : 'home');
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -124,11 +138,14 @@ export function WorkspacePage() {
   const [showTip, setShowTip] = useState(() => !localStorage.getItem('atlas_tip_dismissed'));
   const [pulseTrigger, setPulseTrigger] = useState(0);
   const [pendingCollectionIds, setPendingCollectionIds] = useState([]);
+  const [pendingDocumentIds, setPendingDocumentIds] = useState([]);
+  const [attachmentError, setAttachmentError] = useState('');
   const [flushingCollections, setFlushingCollections] = useState(false);
   const konamiRef = useRef([]);
   const lastChatModeRef = useRef('home');
   const prevConvRef = useRef(chat.activeConversationId);
   const skipAutoTransition = useRef(false);
+  const suppressRouteSync = useRef(false);
   const pendingRef = useRef([]);
   pendingRef.current = pendingCollectionIds;
   const manuallyFlushingRef = useRef(false);
@@ -142,6 +159,8 @@ export function WorkspacePage() {
     setShowCheatSheet(false);
     setShowDiagnostics(false);
     setPendingCollectionIds([]);
+    setPendingDocumentIds([]);
+    setAttachmentError('');
   }
 
   function startTransition() {
@@ -154,6 +173,7 @@ export function WorkspacePage() {
     resetWorkspace();
     setWorkspaceMode('home');
     lastChatModeRef.current = 'home';
+    navigate(APP_HOME_PATH, { replace: !routeConversationId });
   }
 
   function handleNewConversation() {
@@ -161,6 +181,7 @@ export function WorkspacePage() {
     setFocusTrigger((k) => k + 1);
     setWorkspaceMode('empty-chat');
     lastChatModeRef.current = 'empty-chat';
+    navigate(APP_HOME_PATH, { replace: !routeConversationId });
   }
 
   function dismissTip() {
@@ -175,36 +196,124 @@ export function WorkspacePage() {
       chat.addCoffeeMessage?.();
       return;
     }
-    const needsFlush = !chat.activeConversationId && pendingCollectionIds.length > 0;
-    if (needsFlush) {
+
+    setAttachmentError('');
+
+    const pendingIds = collectPendingDocumentIds({
+      documentIds: pendingDocumentIds,
+      collectionIds: pendingCollectionIds,
+      collections,
+    });
+    const hasPendingAttachments = pendingIds.length > 0 || pendingCollectionIds.length > 0;
+    let conversationId = chat.activeConversationId;
+    let messageAttachments = null;
+
+    if (hasPendingAttachments) {
       manuallyFlushingRef.current = true;
-      const ids = [...pendingCollectionIds];
-      setPendingCollectionIds([]);
+
       try {
-        const conv = await chat.createConversation();
-        if (conv) {
-          for (const colId of ids) {
-            const col = collections.find((c) => c.id === colId);
-            if (!col || col.documentIds.length === 0) continue;
-            for (const docId of col.documentIds) {
-              try { await chat.attachDocument(conv.id, docId); } catch {}
-            }
-            chat.addAttachedCollectionId(colId);
+        if (!conversationId) {
+          const conversation = await chat.createConversation();
+
+          if (!conversation?.id) {
+            throw new Error('Could not start a new conversation.');
+          }
+
+          conversationId = conversation.id;
+        }
+
+        let existingDocuments;
+
+        try {
+          existingDocuments = await getConversationDocuments(conversationId);
+        } catch {
+          throw new Error('Could not verify conversation attachments. Please try again.');
+        }
+
+        const satisfiedIds = new Set(
+          (Array.isArray(existingDocuments) ? existingDocuments : []).map((document) => document.id),
+        );
+        const failedIds = new Set();
+
+        for (const documentId of pendingIds) {
+          if (satisfiedIds.has(documentId)) continue;
+
+          try {
+            await chat.attachDocument(conversationId, documentId);
+            satisfiedIds.add(documentId);
+          } catch {
+            failedIds.add(documentId);
           }
         }
+
+        setPendingDocumentIds((current) => current.filter((documentId) => failedIds.has(documentId)));
+
+        const remainingCollectionIds = [];
+
+        for (const collectionId of pendingCollectionIds) {
+          const collection = collections.find((candidate) => candidate.id === collectionId);
+          const collectionDocumentIds = collection?.documentIds ?? [];
+
+          if (collectionDocumentIds.every((documentId) => satisfiedIds.has(documentId))) {
+            chat.addAttachedCollectionId(collectionId);
+          } else {
+            remainingCollectionIds.push(collectionId);
+          }
+        }
+
+        setPendingCollectionIds(remainingCollectionIds);
+
+        messageAttachments = await chat.fetchConversationDocuments(conversationId);
+
+        if (!messageAttachments) {
+          throw new Error('Could not verify conversation attachments. Please try again.');
+        }
+
+        if (failedIds.size > 0 || remainingCollectionIds.length > 0) {
+          const failureCount = failedIds.size + remainingCollectionIds.length;
+          setAttachmentError(
+            `${failureCount} attachment${failureCount === 1 ? '' : 's'} could not be added. Please retry.`,
+          );
+          return;
+        }
+      } catch (error_) {
+        setAttachmentError(
+          error_ instanceof Error ? error_.message : 'Could not attach documents. Please try again.',
+        );
+        return;
       } finally {
         manuallyFlushingRef.current = false;
       }
     }
-    chat.send().catch(() => {});
+
+    chat.send({ conversationId, attachments: messageAttachments ?? undefined }).catch(() => {});
   }
 
   function handleSelectConversation(id) {
-    chat.selectConversation(id);
+    if (!id) return;
+
     startTransition();
     setWorkspaceMode('conversation');
     lastChatModeRef.current = 'conversation';
     setPendingCollectionIds([]);
+    setPendingDocumentIds([]);
+    setAttachmentError('');
+
+    if (routeConversationId !== id) {
+      navigate(conversationPath(id));
+    }
+  }
+
+  async function handleDeleteConversation(id) {
+    const deleted = await chat.deleteConversation(id);
+
+    if (!deleted || routeConversationId !== id) return;
+
+    skipAutoTransition.current = true;
+    resetWorkspace();
+    setWorkspaceMode('home');
+    lastChatModeRef.current = 'home';
+    navigate(APP_HOME_PATH, { replace: true });
   }
 
   const handleNewConversationRef = useRef(handleNewConversation);
@@ -280,6 +389,55 @@ export function WorkspacePage() {
     prevConvRef.current = chat.activeConversationId;
   }, [chat.activeConversationId]);
 
+  useEffect(() => {
+    const action = getConversationRouteAction({
+      routeConversationId,
+      activeConversationId: chat.activeConversationId,
+    });
+
+    if (action === 'home') {
+      skipAutoTransition.current = true;
+      suppressRouteSync.current = true;
+      resetWorkspace();
+      setWorkspaceMode('home');
+      lastChatModeRef.current = 'home';
+      return;
+    }
+
+    if (action !== 'select') return;
+
+    suppressRouteSync.current = false;
+    chat.selectConversation(routeConversationId).then((result) => {
+      if (result?.ok) {
+        setWorkspaceMode('conversation');
+        lastChatModeRef.current = 'conversation';
+        return;
+      }
+
+      if (!isConversationNotFound(result)) return;
+
+      skipAutoTransition.current = true;
+      suppressRouteSync.current = true;
+      resetWorkspace();
+      setWorkspaceMode('home');
+      lastChatModeRef.current = 'home';
+      navigate(APP_HOME_PATH, { replace: true });
+    });
+  }, [routeConversationId, chat.selectConversation, navigate]);
+
+  useEffect(() => {
+    if (suppressRouteSync.current) {
+      suppressRouteSync.current = false;
+      return;
+    }
+
+    if (!chat.activeConversationId || workspaceMode !== 'conversation' || routeConversationId) {
+      return;
+    }
+
+    navigate(conversationPath(chat.activeConversationId), { replace: true });
+  }, [chat.activeConversationId, routeConversationId, workspaceMode, navigate]);
+
   const currentSources = useMemo(() => {
     if (chat.messages.length) {
       const assistantMessage = [...chat.messages].reverse().find((message) => message.role === 'assistant' && Array.isArray(message.sources));
@@ -303,6 +461,21 @@ export function WorkspacePage() {
   }, [documents.documents, documentSearch]);
 
   const documentIdsSet = useMemo(() => new Set(chat.conversationDocuments.map((d) => d.id)), [chat.conversationDocuments]);
+  const pendingAttachedDocuments = useMemo(
+    () => pendingAttachmentDocuments({
+      documentIds: pendingDocumentIds,
+      collectionIds: pendingCollectionIds,
+      collections,
+      documents: documents.documents,
+    }),
+    [pendingDocumentIds, pendingCollectionIds, collections, documents.documents],
+  );
+  const visibleAttachedDocuments = chat.activeConversationId
+    ? chat.conversationDocuments
+    : pendingAttachedDocuments;
+  const removableAttachmentIds = chat.activeConversationId
+    ? chat.conversationDocuments.map((document) => document.id)
+    : pendingDocumentIds;
   const relevantCollections = useMemo(() => {
     return collections.filter((c) => chat.attachedCollectionIds.includes(c.id));
   }, [collections, chat.attachedCollectionIds]);
@@ -351,13 +524,29 @@ export function WorkspacePage() {
   }
 
   async function handleAttachCollection(collectionId) {
+    setAttachmentError('');
+
     if (chat.activeConversationId) {
       const col = collections.find((c) => c.id === collectionId);
       if (!col) return;
       const toAttach = col.documentIds.filter((id) => !chat.conversationDocuments.some((d) => d.id === id));
+      let failures = 0;
+
       for (const docId of toAttach) {
-        await chat.attachDocument(chat.activeConversationId, docId).catch(() => {});
+        try {
+          await chat.attachDocument(chat.activeConversationId, docId);
+        } catch {
+          failures += 1;
+        }
       }
+
+      if (failures > 0) {
+        setAttachmentError(
+          `${failures} document${failures === 1 ? '' : 's'} could not be attached. Please retry.`,
+        );
+        throw new Error('Some documents could not be attached.');
+      }
+
       chat.addAttachedCollectionId(collectionId);
     } else {
       setPendingCollectionIds((prev) =>
@@ -367,15 +556,48 @@ export function WorkspacePage() {
   }
 
   async function handleDetachCollection(collectionId) {
+    setAttachmentError('');
+
     if (chat.activeConversationId) {
       const col = collections.find((c) => c.id === collectionId);
       if (!col) return;
-      for (const docId of col.documentIds) {
-        await chat.detachDocument(chat.activeConversationId, docId).catch(() => {});
+      const attachedIds = new Set(chat.conversationDocuments.map((document) => document.id));
+      const toDetach = col.documentIds.filter((docId) => attachedIds.has(docId));
+      let failures = 0;
+
+      for (const docId of toDetach) {
+        try {
+          await chat.detachDocument(chat.activeConversationId, docId);
+        } catch {
+          failures += 1;
+        }
       }
+
+      if (failures > 0) {
+        setAttachmentError(
+          `${failures} document${failures === 1 ? '' : 's'} could not be removed. Please retry.`,
+        );
+        throw new Error('Some documents could not be removed.');
+      }
+
       chat.removeAttachedCollectionId(collectionId);
     } else {
       setPendingCollectionIds((prev) => prev.filter((id) => id !== collectionId));
+    }
+  }
+
+  async function handleRemoveAttachment(documentId) {
+    setAttachmentError('');
+
+    if (!chat.activeConversationId) {
+      setPendingDocumentIds((prev) => prev.filter((id) => id !== documentId));
+      return;
+    }
+
+    try {
+      await chat.detachDocument(chat.activeConversationId, documentId);
+    } catch {
+      setAttachmentError('Could not remove the attachment. Please retry.');
     }
   }
 
@@ -385,15 +607,34 @@ export function WorkspacePage() {
     if (!convId || pending.length === 0 || flushingCollections || manuallyFlushingRef.current) return;
     setFlushingCollections(true);
     const currentPending = [...pending];
-    setPendingCollectionIds([]);
     (async () => {
+      const remaining = [];
+      let failureCount = 0;
+
       for (const colId of currentPending) {
         const col = collections.find((c) => c.id === colId);
         if (!col || col.documentIds.length === 0) continue;
+        let collectionFailures = 0;
         for (const docId of col.documentIds) {
-          try { await chat.attachDocument(convId, docId); } catch {}
+          try {
+            await chat.attachDocument(convId, docId);
+          } catch {
+            collectionFailures += 1;
+          }
         }
-        chat.addAttachedCollectionId(colId);
+        if (collectionFailures > 0) {
+          remaining.push(colId);
+          failureCount += collectionFailures;
+        } else {
+          chat.addAttachedCollectionId(colId);
+        }
+      }
+
+      setPendingCollectionIds(remaining);
+      if (failureCount > 0) {
+        setAttachmentError(
+          `${failureCount} document${failureCount === 1 ? '' : 's'} could not be attached. Please retry.`,
+        );
       }
       setFlushingCollections(false);
     })();
@@ -436,7 +677,7 @@ export function WorkspacePage() {
                 isLoading={chat.conversationsLoading}
                 onSelect={handleMobileSelectConversation}
                 onRename={chat.renameConversation}
-                onDelete={chat.deleteConversation}
+                onDelete={handleDeleteConversation}
               />
             </div>
           </aside>
@@ -451,7 +692,7 @@ export function WorkspacePage() {
           onSelect={handleSelectConversation}
           onNew={handleNewConversation}
           onRename={chat.renameConversation}
-          onDelete={chat.deleteConversation}
+          onDelete={handleDeleteConversation}
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -560,8 +801,11 @@ export function WorkspacePage() {
                     onSend={handleSend}
                     onStop={chat.abortStream}
                     isLoading={chat.isLoading}
-                    error={chat.error}
+                    error={attachmentError || chat.error}
                     isCreatingConversation={chat.isCreatingConversation}
+                    attachments={visibleAttachedDocuments}
+                    removableAttachmentIds={removableAttachmentIds}
+                    onRemoveAttachment={handleRemoveAttachment}
                     onAttach={() => { setAttachModalTab('documents'); setShowAttachModal(true); }}
                     onCollections={() => { setAttachModalTab('collections'); setShowAttachModal(true); }}
                     focusTrigger={focusTrigger}
@@ -924,11 +1168,17 @@ export function WorkspacePage() {
         open={showAttachModal}
         onClose={() => setShowAttachModal(false)}
         allDocuments={documents.documents}
-        attachedDocuments={chat.conversationDocuments}
+        attachedDocuments={visibleAttachedDocuments}
         conversationId={chat.activeConversationId}
         onAttach={async (documentId) => {
+          setAttachmentError('');
+
           if (chat.activeConversationId) {
             await chat.attachDocument(chat.activeConversationId, documentId);
+          } else {
+            setPendingDocumentIds((prev) =>
+              prev.includes(documentId) ? prev : [...prev, documentId]
+            );
           }
         }}
         collections={collections}

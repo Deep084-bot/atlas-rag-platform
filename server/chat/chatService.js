@@ -1,5 +1,6 @@
 import { ValidationError } from '../errors.js';
 import { buildFallbackChatPrompt } from '../generation/promptBuilder.js';
+import { parseDocumentIds, selectMessageAttachments } from './messageAttachments.js';
 
 const OCR_QUALITY_THRESHOLD = 0.30;
 
@@ -217,7 +218,7 @@ export function createChatService({
   similarityThreshold = 0.5
 }) {
   return {
-    async chat({ conversationId, message, userId } = {}) {
+    async chat({ conversationId, message, userId, documentIds } = {}) {
       const normalizedMessage = typeof message === 'string' ? message.trim() : '';
 
       if (!normalizedMessage) {
@@ -230,8 +231,15 @@ export function createChatService({
         throw new ValidationError('userId is required.');
       }
 
+      const requestedDocumentIds = parseDocumentIds(documentIds);
+
+      if (requestedDocumentIds === null) {
+        throw new ValidationError('documentIds must be an array of document ids.');
+      }
+
       const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
       let conversation = null;
+      let conversationDocuments = [];
 
       if (normalizedConversationId) {
         conversation = await conversationRepository.getConversationByIdForUser(normalizedConversationId, normalizedUserId);
@@ -258,6 +266,7 @@ export function createChatService({
 
       if (docCount > 0) {
         const docs = await conversationDocumentRepository.listByConversation(conversation.id, normalizedUserId);
+        conversationDocuments = docs;
         const anyProcessing = docs.some(d => d.status && !['ready', 'failed'].includes(d.status));
         const anyLowQuality = docs.some(d => d.status === 'ready' && d.ocrQuality !== null && d.ocrQuality < OCR_QUALITY_THRESHOLD);
         let matchedDoc = null;
@@ -292,6 +301,7 @@ export function createChatService({
             userMessage: normalizedMessage,
             assistantMessage: message,
             assistantSources: [],
+            userAttachments: selectMessageAttachments(conversationDocuments, requestedDocumentIds),
           });
 
           if (conversation.title === UNTITLED_THREAD) {
@@ -422,6 +432,7 @@ export function createChatService({
         userMessage: normalizedMessage,
         assistantMessage: generation.answer,
         assistantSources: activeSources,
+        userAttachments: selectMessageAttachments(conversationDocuments, requestedDocumentIds),
       });
 
       if (conversation.title === UNTITLED_THREAD) {

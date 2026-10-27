@@ -225,7 +225,7 @@ export class ConversationRepository {
 
     const result = await this.pool.query(
       `
-        SELECT id, thread_id, role, content, citations, created_at
+        SELECT id, thread_id, role, content, citations, attachments, created_at
         FROM chat_messages
         WHERE thread_id = $1
         ORDER BY created_at ASC
@@ -239,11 +239,12 @@ export class ConversationRepository {
       role: row.role,
       content: row.content,
       citations: row.citations,
+      attachments: Array.isArray(row.attachments) ? row.attachments : [],
       createdAt: row.created_at
     }));
   }
 
-  async appendConversationTurn({ conversationId, userMessage, assistantMessage, assistantSources = [] }) {
+  async appendConversationTurn({ conversationId, userMessage, assistantMessage, assistantSources = [], userAttachments = [] }) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
@@ -274,10 +275,11 @@ export class ConversationRepository {
             thread_id,
             role,
             content,
-            citations
-          ) VALUES ($1, 'user', $2, '[]'::jsonb)
+            citations,
+            attachments
+          ) VALUES ($1, 'user', $2, '[]'::jsonb, $3::jsonb)
         `,
-        [conversationId, userMessage]
+        [conversationId, userMessage, JSON.stringify(userAttachments)]
       );
 
       await client.query(
@@ -286,8 +288,9 @@ export class ConversationRepository {
             thread_id,
             role,
             content,
-            citations
-          ) VALUES ($1, 'assistant', $2, $3::jsonb)
+            citations,
+            attachments
+          ) VALUES ($1, 'assistant', $2, $3::jsonb, '[]'::jsonb)
         `,
         [conversationId, assistantMessage, JSON.stringify(assistantSources)]
       );
@@ -302,7 +305,7 @@ export class ConversationRepository {
     }
   }
 
-  async appendConversationTurnForUser({ conversationId, userId, userMessage, assistantMessage, assistantSources = [] }) {
+  async appendConversationTurnForUser({ conversationId, userId, userMessage, assistantMessage, assistantSources = [], userAttachments = [] }) {
     if (this.pool === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
@@ -334,10 +337,11 @@ export class ConversationRepository {
             thread_id,
             role,
             content,
-            citations
-          ) VALUES ($1, 'user', $2, '[]'::jsonb)
+            citations,
+            attachments
+          ) VALUES ($1, 'user', $2, '[]'::jsonb, $3::jsonb)
         `,
-        [conversationId, userMessage]
+        [conversationId, userMessage, JSON.stringify(userAttachments)]
       );
 
       await client.query(
@@ -346,8 +350,9 @@ export class ConversationRepository {
             thread_id,
             role,
             content,
-            citations
-          ) VALUES ($1, 'assistant', $2, $3::jsonb)
+            citations,
+            attachments
+          ) VALUES ($1, 'assistant', $2, $3::jsonb, '[]'::jsonb)
         `,
         [conversationId, assistantMessage, JSON.stringify(assistantSources)]
       );

@@ -1,23 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
 import { createConversation as apiCreateConversation, listConversations, getConversationMessages, renameConversation as renameConversationApi, deleteConversation as deleteConversationApi, sendChatMessageStream, getConversationDocuments, attachDocumentToConversation, detachDocumentFromConversation } from '../api/atlasApi.js';
+import { normalizeMessage, snapshotMessageAttachments } from './chatMessages.js';
 
 const POLLING_STATUSES = new Set(['uploaded', 'extracting', 'ocr', 'chunking', 'embedding']);
 const POLLING_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_INITIAL_MS = 2_000;
 const POLL_INTERVAL_MAX_MS = 10_000;
 const POLL_BACKOFF_RATE = 1.5;
-
-function normalizeMessage(msg) {
-  return {
-    id: msg.id,
-    role: msg.role,
-    content: msg.content,
-    sources: msg.citations ?? msg.sources ?? [],
-    createdAt: msg.createdAt,
-    conversationId: msg.conversationId ?? msg.threadId,
-  };
-}
 
 export function useChat() {
   const [conversations, setConversations] = useState([]);
@@ -207,15 +197,19 @@ export function useChat() {
       }
       console.log('[fetchConversationDocuments] RESOLVED conversationId=%s returned=%d docs=%o',
         conversationId, docs?.length ?? -1, docs);
-      setConversationDocuments(Array.isArray(docs) ? docs : []);
+      const normalizedDocs = Array.isArray(docs) ? docs : [];
+      setConversationDocuments(normalizedDocs);
 
-      if (hasProcessingDocuments(docs)) {
+      if (hasProcessingDocuments(normalizedDocs)) {
         pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
         startPoll(POLL_INTERVAL_INITIAL_MS);
       }
+
+      return normalizedDocs;
     } catch (err) {
-      if (requestId !== documentsRequestRef.current) return;
+      if (requestId !== documentsRequestRef.current) return null;
       setConversationDocumentsError(err instanceof Error ? err.message : 'Failed to load documents');
+      return null;
     } finally {
       if (requestId === documentsRequestRef.current) {
         setConversationDocumentsLoading(false);
@@ -243,7 +237,7 @@ export function useChat() {
         getConversationMessages(id),
         getConversationDocuments(id)
       ]);
-      if (activeRequestRef.current !== id) return;
+      if (activeRequestRef.current !== id) return { ok: false, status: null };
       setMessages(data.map(normalizeMessage));
       setConversationDocuments(Array.isArray(docs) ? docs : []);
 
@@ -251,11 +245,14 @@ export function useChat() {
         pollIntervalRef.current = POLL_INTERVAL_INITIAL_MS;
         startPoll(POLL_INTERVAL_INITIAL_MS);
       }
+
+      return { ok: true, status: 200 };
     } catch (err) {
-      if (activeRequestRef.current !== id) return;
+      if (activeRequestRef.current !== id) return { ok: false, status: null };
       const message = err instanceof Error ? err.message : 'Failed to load conversation';
       setMessagesError(message);
       setConversationDocumentsError(message);
+      return { ok: false, status: err?.status ?? null };
     } finally {
       if (activeRequestRef.current === id) {
         setMessagesLoading(false);
@@ -282,13 +279,19 @@ export function useChat() {
     }
   }
 
-  async function send() {
+  async function send({ conversationId, attachments } = {}) {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
       setError('Enter a message.');
       return null;
     }
+
+    const requestedConversationId = typeof conversationId === 'string' ? conversationId.trim() : '';
+    const targetConversationId = requestedConversationId || activeConversationId;
+    const attachmentSnapshot = snapshotMessageAttachments(
+      Array.isArray(attachments) ? attachments : conversationDocuments
+    );
 
     const streamId = ++streamIdRef.current;
 
@@ -310,6 +313,7 @@ export function useChat() {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmedMessage,
+      attachments: attachmentSnapshot,
     };
 
     const assistantMessage = {
@@ -331,12 +335,13 @@ export function useChat() {
 
     try {
       await sendChatMessageStream({
-        conversationId: activeConversationId || undefined,
+        conversationId: targetConversationId || undefined,
         message: trimmedMessage,
+        documentIds: attachmentSnapshot.map((attachment) => attachment.id),
         signal: abortController.signal,
         onMeta: (event) => {
           if (streamIdRef.current !== streamId) return;
-          if (event.conversationId && event.conversationId !== activeConversationId) {
+          if (event.conversationId && event.conversationId !== targetConversationId) {
             newConversationId = event.conversationId;
           }
         },
@@ -374,6 +379,11 @@ export function useChat() {
       if (newConversationId) {
         activeRequestRef.current = newConversationId;
         setActiveConversationId(newConversationId);
+        setIsCreatingConversation(false);
+        await fetchConversations(true);
+      } else if (targetConversationId && targetConversationId !== activeConversationId) {
+        activeRequestRef.current = targetConversationId;
+        setActiveConversationId(targetConversationId);
         setIsCreatingConversation(false);
         await fetchConversations(true);
       } else if (isCreatingConversation) {
@@ -468,7 +478,7 @@ export function useChat() {
   }
 
   async function deleteConversation(id) {
-    if (deletingConversationRef.current) return;
+    if (deletingConversationRef.current) return false;
     deletingConversationRef.current = true;
 
     conversationsRequestRef.current++;
@@ -492,6 +502,7 @@ export function useChat() {
 
     try {
       await deleteConversationApi(id);
+      return true;
     } catch {
       setConversations(previous);
 
@@ -501,6 +512,8 @@ export function useChat() {
         setConversationDocuments(previousDocs);
         setAttachedCollectionIds(previousCollectionIds);
       }
+
+      return false;
     } finally {
       deletingConversationRef.current = false;
     }

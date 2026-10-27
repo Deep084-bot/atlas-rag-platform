@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { uploadDocument } from '../api/atlasApi.js';
+import { attachableDocuments, isDocumentAttachable } from '../hooks/attachmentSelection.js';
 import { mergeDocumentLists } from '../hooks/documentPolling.js';
 
 function formatUploadDate(timestamp) {
@@ -167,6 +168,7 @@ export function DocumentAttachModal({
   const [search, setSearch] = useState('');
   const [attaching, setAttaching] = useState(false);
   const [attachingColId, setAttachingColId] = useState(null);
+  const [attachError, setAttachError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -213,6 +215,12 @@ export function DocumentAttachModal({
     return availableDocuments.filter((d) => d.fileName.toLowerCase().includes(q));
   }, [availableDocuments, search]);
 
+  const selectableDocuments = useMemo(() => attachableDocuments(filteredDocuments), [filteredDocuments]);
+  const allSelectableSelected = useMemo(
+    () => selectableDocuments.length > 0 && selectableDocuments.every((doc) => selectedIds.includes(doc.id)),
+    [selectableDocuments, selectedIds],
+  );
+
   const filteredCollections = useMemo(() => {
     if (!collectionSearch.trim()) return collections;
     const q = collectionSearch.toLowerCase();
@@ -234,6 +242,7 @@ export function DocumentAttachModal({
       setRenameColValue('');
       setConfirmDeleteColId(null);
       setAttaching(false);
+      setAttachError('');
       setUploadError('');
       setUploadProgress(0);
       setLocalDocuments(null);
@@ -267,6 +276,9 @@ export function DocumentAttachModal({
   }, [open]);
 
   function toggleSelection(documentId) {
+    const document = mergedDocuments.find((candidate) => candidate.id === documentId);
+    if (!isDocumentAttachable(document)) return;
+
     setSelectedIds((prev) =>
       prev.includes(documentId)
         ? prev.filter((id) => id !== documentId)
@@ -275,22 +287,33 @@ export function DocumentAttachModal({
   }
 
   function toggleAll() {
-    if (selectedIds.length === filteredDocuments.length) {
+    if (allSelectableSelected) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredDocuments.map((d) => d.id));
+      setSelectedIds(selectableDocuments.map((d) => d.id));
     }
   }
 
   async function handleAttach() {
     if (selectedIds.length === 0 || attaching) return;
     setAttaching(true);
+    setAttachError('');
+    const attachedIds = [];
+
     try {
       for (const documentId of selectedIds) {
         await onAttach(documentId);
+        attachedIds.push(documentId);
       }
       onClose();
-    } catch {
+    } catch (error_) {
+      if (attachedIds.length > 0) {
+        setSelectedIds((current) => current.filter((documentId) => !attachedIds.includes(documentId)));
+      }
+      setAttachError(
+        error_ instanceof Error ? error_.message : 'Could not attach the selected documents.',
+      );
+    } finally {
       setAttaching(false);
     }
   }
@@ -298,8 +321,14 @@ export function DocumentAttachModal({
   async function handleAttachCollection(collection) {
     if (!onAttachCollection || attachingColId) return;
     setAttachingColId(collection.id);
+    setAttachError('');
+
     try {
       await onAttachCollection(collection.id);
+    } catch (error_) {
+      setAttachError(
+        error_ instanceof Error ? error_.message : 'Could not attach the collection.',
+      );
     } finally {
       setAttachingColId(null);
     }
@@ -308,8 +337,14 @@ export function DocumentAttachModal({
   async function handleDetachCollection(collectionId) {
     if (!onDetachCollection || attachingColId) return;
     setAttachingColId(collectionId);
+    setAttachError('');
+
     try {
       await onDetachCollection(collectionId);
+    } catch (error_) {
+      setAttachError(
+        error_ instanceof Error ? error_.message : 'Could not detach the collection.',
+      );
     } finally {
       setAttachingColId(null);
     }
@@ -516,7 +551,10 @@ export function DocumentAttachModal({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setAttachError('');
+              }}
               className={`border-b-2 px-4 py-3 text-sm font-medium transition ${
                 activeTab === tab.id
                   ? 'border-atlas-teal text-white'
@@ -578,11 +616,11 @@ export function DocumentAttachModal({
                       <div className="relative flex h-4 w-4 items-center justify-center">
                         <input
                           type="checkbox"
-                          checked={selectedIds.length === filteredDocuments.length && filteredDocuments.length > 0}
+                          checked={allSelectableSelected}
                           onChange={toggleAll}
                           className="h-4 w-4 appearance-none rounded border border-white/20 bg-white/5 checked:border-atlas-teal checked:bg-atlas-teal transition-colors"
                         />
-                        {selectedIds.length === filteredDocuments.length && filteredDocuments.length > 0 && (
+                        {allSelectableSelected && (
                           <svg className="pointer-events-none absolute h-2.5 w-2.5 text-slate-950" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
@@ -601,11 +639,14 @@ export function DocumentAttachModal({
                       const status = doc.status;
                       const isReady = status === 'ready';
                       const isProcessing = status && status !== 'ready' && status !== 'failed';
+                      const isAttachable = isDocumentAttachable(doc);
 
                       return (
                         <label
                           key={doc.id}
-                          className={`group flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-all ${
+                          className={`group flex items-start gap-3 rounded-xl border px-4 py-3 transition-all ${
+                            isAttachable ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'
+                          } ${
                             isSelected
                               ? 'border-atlas-teal/30 bg-atlas-teal/10 shadow-[0_0_16px_rgba(72,215,200,0.06)]'
                               : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
@@ -617,10 +658,14 @@ export function DocumentAttachModal({
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleSelection(doc.id)}
+                              disabled={!isAttachable}
+                              title={isAttachable ? undefined : 'Failed documents cannot be attached.'}
                               className={`h-4 w-4 appearance-none rounded border transition-colors ${
-                                isSelected
-                                  ? 'border-atlas-teal bg-atlas-teal'
-                                  : 'border-white/20 bg-white/5 group-hover:border-white/30'
+                                !isAttachable
+                                  ? 'cursor-not-allowed border-white/10 bg-white/5'
+                                  : isSelected
+                                    ? 'border-atlas-teal bg-atlas-teal'
+                                    : 'border-white/20 bg-white/5 group-hover:border-white/30'
                               }`}
                               aria-label={`Select ${doc.fileName}`}
                             />
@@ -1107,6 +1152,12 @@ export function DocumentAttachModal({
             </div>
           )}
         </div>
+
+        {attachError && (
+          <div className="border-t border-rose-500/10 bg-rose-500/10 px-6 py-2">
+            <p className="text-xs text-rose-200">{attachError}</p>
+          </div>
+        )}
 
         <div className="flex items-center justify-between border-t border-white/10 px-6 py-4">
           {activeTab === 'documents' ? (

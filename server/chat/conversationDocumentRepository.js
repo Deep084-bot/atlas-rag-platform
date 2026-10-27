@@ -51,7 +51,7 @@ export class ConversationDocumentRepository {
         SELECT $1, $2
         WHERE
           EXISTS (SELECT 1 FROM chat_threads WHERE id = $1 AND user_id = $3)
-          AND EXISTS (SELECT 1 FROM documents WHERE id = $2 AND user_id = $3)
+          AND EXISTS (SELECT 1 FROM documents WHERE id = $2 AND user_id = $3 AND status <> 'failed')
         ON CONFLICT (conversation_id, document_id) DO NOTHING
         RETURNING conversation_id, document_id, created_at
       `,

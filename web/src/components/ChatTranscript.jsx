@@ -78,6 +78,34 @@ function StreamingIndicator() {
   );
 }
 
+function UserAttachments({ attachments = [] }) {
+  if (!attachments.length) return null;
+
+  return (
+    <div className="mt-3" aria-label={`Attached documents (${attachments.length})`}>
+      <p className="text-xs font-medium text-slate-400">
+        Attached documents ({attachments.length})
+      </p>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {attachments.map((attachment) => (
+          <li
+            key={attachment.id}
+            title={`${attachment.fileName}${attachment.fileType ? ` (${attachment.fileType})` : ''}`}
+            className="flex max-w-full items-center gap-2 rounded-full border border-atlas-sky/20 bg-atlas-sky/10 px-3 py-1 text-xs text-slate-200"
+          >
+            <span className="truncate">{attachment.fileName}</span>
+            {attachment.fileType && (
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {attachment.fileType}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AssistantMessage({ message, isStreaming }) {
   const [showSources, setShowSources] = useState(false);
   const hasSources = Array.isArray(message.sources) && message.sources.length > 0;
@@ -137,7 +165,10 @@ export function ChatTranscript({ messages = [], isStreaming = false }) {
             {message.role === 'assistant' ? (
               <AssistantMessage message={message} isStreaming={isLastAssistant} />
             ) : (
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-100">{message.content}</p>
+              <>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-100">{message.content}</p>
+                <UserAttachments attachments={message.attachments} />
+              </>
             )}
           </article>
         );
