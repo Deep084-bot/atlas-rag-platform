@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { createEmbeddingService } from '../../server/embeddings/embeddingService.js';
-import { BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
+import { HOSTED_BGE_SPACE, LOCAL_BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
 import { DatabaseError, ValidationError } from '../../server/errors.js';
 
 function baseRepos() {
@@ -50,8 +50,8 @@ test('default service (no space) writes through the legacy chunks.embedding colu
 test('explicit BGE space still writes through the legacy column', async () => {
   const { documentsRepository, embeddingRepository } = baseRepos();
   const legacyWrites = [];
-  embeddingRepository.updateChunkEmbedding = async (id) => {
-    legacyWrites.push(id);
+  embeddingRepository.updateChunkEmbedding = async (id, embedding, options) => {
+    legacyWrites.push({ id, spaceId: options.spaceId });
     return null;
   };
   const provider = { embedMany: async () => [Array(384).fill(0.1)] };
@@ -60,11 +60,45 @@ test('explicit BGE space still writes through the legacy column', async () => {
     documentsRepository,
     embeddingRepository,
     embeddingProvider: provider,
-    space: BGE_SPACE
+    space: HOSTED_BGE_SPACE
   });
 
   await service.embedDocument('doc-1');
-  assert.deepEqual(legacyWrites, ['chunk-1']);
+  assert.deepEqual(legacyWrites, [{ id: 'chunk-1', spaceId: HOSTED_BGE_SPACE.id }]);
+});
+
+test('local BGE writes are tagged with the local space and scoped status counts', async () => {
+  const { documentsRepository, embeddingRepository } = baseRepos();
+  const writes = [];
+  const statuses = [];
+  embeddingRepository.updateChunkEmbedding = async (id, embedding, options) => {
+    writes.push({ id, spaceId: options.spaceId });
+    return null;
+  };
+  embeddingRepository.countEmbeddedChunks = async (id, options) => {
+    statuses.push({ id, ...options });
+    return 1;
+  };
+  const provider = { embedMany: async () => [Array(384).fill(0.1)] };
+
+  const service = createEmbeddingService({
+    documentsRepository,
+    embeddingRepository,
+    embeddingProvider: provider,
+    space: LOCAL_BGE_SPACE
+  });
+
+  await service.embedDocument('doc-1');
+  const status = await service.getEmbeddingStatus('doc-1');
+
+  assert.deepEqual(writes, [{ id: 'chunk-1', spaceId: LOCAL_BGE_SPACE.id }]);
+  assert.equal(status.complete, true);
+  assert.deepEqual(statuses[0], {
+    id: 'doc-1',
+    client: null,
+    spaceId: LOCAL_BGE_SPACE.id,
+    includeLegacyUnknown: false
+  });
 });
 
 test('Voyage embedDocument delegates to the coordinated backfill runner', async () => {
@@ -179,6 +213,7 @@ test('getEmbeddingStatus is scoped to the active space and identity-based', asyn
   assert.deepEqual(status, {
     documentId: 'doc-1',
     spaceId: VOYAGE_SPACE.id,
+    legacyUnknownPolicy: 'block',
     totalChunks: 3,
     embeddedChunks: 2,
     missingChunks: 1,
@@ -206,7 +241,7 @@ test('getEmbeddingStatus does not trust coincidentally-equal counts', async () =
   assert.equal(status.missingChunks, 1);
 });
 
-test('getEmbeddingStatus keeps the legacy shape for BGE', async () => {
+test('getEmbeddingStatus exposes the active space policy for BGE', async () => {
   const { documentsRepository, embeddingRepository } = baseRepos();
   embeddingRepository.countTotalChunks = async () => 2;
   embeddingRepository.countEmbeddedChunks = async () => 2;
@@ -214,12 +249,14 @@ test('getEmbeddingStatus keeps the legacy shape for BGE', async () => {
     documentsRepository,
     embeddingRepository,
     embeddingProvider: { embedMany: async () => [] },
-    space: BGE_SPACE
+    space: HOSTED_BGE_SPACE
   });
 
   const status = await service.getEmbeddingStatus('doc-1');
   assert.deepEqual(status, {
     documentId: 'doc-1',
+    spaceId: HOSTED_BGE_SPACE.id,
+    legacyUnknownPolicy: 'block',
     totalChunks: 2,
     embeddedChunks: 2,
     complete: true
@@ -269,7 +306,12 @@ test('BGE getEmbeddingStatus forwards the transaction client to every probe', as
       return 2;
     },
     countEmbeddedChunks: async (id, options = {}) => {
-      seen.embedded.push({ id, client: options.client ?? null });
+      seen.embedded.push({
+        id,
+        client: options.client ?? null,
+        spaceId: options.spaceId ?? null,
+        includeLegacyUnknown: options.includeLegacyUnknown ?? null
+      });
       return 2;
     }
   };
@@ -277,7 +319,7 @@ test('BGE getEmbeddingStatus forwards the transaction client to every probe', as
     documentsRepository,
     embeddingRepository,
     embeddingProvider: { embedMany: async () => [] },
-    space: BGE_SPACE
+    space: HOSTED_BGE_SPACE
   });
 
   const status = await service.getEmbeddingStatus('doc-1', { client });
@@ -285,7 +327,12 @@ test('BGE getEmbeddingStatus forwards the transaction client to every probe', as
   assert.equal(status.complete, true);
   assert.deepEqual(seen.document, [{ id: 'doc-1', client }]);
   assert.deepEqual(seen.total, [{ id: 'doc-1', client }]);
-  assert.deepEqual(seen.embedded, [{ id: 'doc-1', client }]);
+  assert.deepEqual(seen.embedded, [{
+    id: 'doc-1',
+    client,
+    spaceId: HOSTED_BGE_SPACE.id,
+    includeLegacyUnknown: false
+  }]);
 });
 
 test('getEmbeddingStatus returns null when the document is absent (client-scoped)', async () => {
@@ -294,7 +341,7 @@ test('getEmbeddingStatus returns null when the document is absent (client-scoped
     documentsRepository: { getDocumentById: async (id, options = {}) => (options.client === client ? null : { id }) },
     embeddingRepository: baseRepos().embeddingRepository,
     embeddingProvider: { embedMany: async () => [] },
-    space: BGE_SPACE
+    space: HOSTED_BGE_SPACE
   });
 
   assert.equal(await service.getEmbeddingStatus('doc-1', { client }), null);

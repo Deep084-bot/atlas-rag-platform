@@ -5,8 +5,10 @@ import { Pool } from 'pg';
 
 import { chunkText } from '../../server/ingestion/chunkText.js';
 import { ChunkRepository } from '../../server/ingestion/chunkRepository.js';
+import { EmbeddingRepository } from '../../server/embeddings/embeddingRepository.js';
 import { createEmbeddingProvider } from '../../server/embeddings/createEmbeddingProvider.js';
 import { assertRuntimeConfigMatchesManifest } from '../../server/embeddings/embeddingManifest.js';
+import { resolveEmbeddingSpaceForProvider } from '../../server/embeddings/embeddingSpaces.js';
 
 const SAFE_DB_PATTERN = /(staging|stage|disposable|test|scratch|sandbox|_stg)/i;
 const DEFAULT_CORPUS = new URL('./fixtures/staging-corpus.json', import.meta.url);
@@ -52,9 +54,6 @@ function resolveTarget({ args, env }) {
   return { connectionString: raw, safeLabel: `${parsed.hostname}:${parsed.port || '5432'}/${database}` };
 }
 
-function toSqlVector(vector) {
-  return `[${vector.join(',')}]`;
-}
 
 async function upsertDocument(pool, { document, userId }) {
   // A seeded document must not be `ready` before its chunks exist and are
@@ -86,7 +85,7 @@ async function replaceChunks(chunkRepository, { documentId, chunks }) {
   return chunkRepository.replaceDocumentChunks(documentId, chunks);
 }
 
-async function markDocumentReady(pool, documentId) {
+async function markDocumentReady(pool, documentId, spaceId) {
   // Publish readiness only after every current chunk has a legacy embedding, and
   // only in a single guarded statement (mirrors the orchestrator's readiness
   // invariant for the seed's legacy BGE path). Refuses — and throws — if any
@@ -105,11 +104,11 @@ async function markDocumentReady(pool, documentId) {
           SELECT 1
           FROM chunks
           WHERE document_id = $1
-            AND embedding IS NULL
+            AND (embedding IS NULL OR embedding_space_id IS DISTINCT FROM $2)
         )
       RETURNING id
     `,
-    [documentId]
+    [documentId, spaceId]
   );
 
   if (result.rowCount !== 1) {
@@ -125,15 +124,17 @@ async function main() {
 
   assertRuntimeConfigMatchesManifest(env);
   const provider = createEmbeddingProvider({ providerName: 'local' });
+  const space = resolveEmbeddingSpaceForProvider('local', env);
   const pool = new Pool({ connectionString: target.connectionString, ssl: false });
   const chunkRepository = new ChunkRepository(pool);
+  const embeddingRepository = new EmbeddingRepository(pool);
 
   const summary = {
     target: target.safeLabel,
     userId: args.userId,
     documents: [],
     embeddedChunks: 0,
-    spaces: { baseline: 'bge-small-en-v1.5-mean-l2-int8-v1', baselineDimensions: 384 }
+    spaces: { baseline: space.id, baselineDimensions: space.dimensions }
   };
 
   try {
@@ -151,14 +152,20 @@ async function main() {
       }
 
       for (let i = 0; i < stored.length; i += 1) {
-        if (vectors[i].length !== 384) {
-          throw new Error(`Unexpected BGE embedding dimension ${vectors[i].length}.`);
+        if (vectors[i].length !== space.dimensions) {
+          throw new Error(`Unexpected BGE embedding dimension ${vectors[i].length}; expected ${space.dimensions}.`);
         }
 
-        await pool.query('UPDATE chunks SET embedding = $2::vector WHERE id = $1;', [stored[i].id, toSqlVector(vectors[i])]);
+        const updated = await embeddingRepository.updateChunkEmbedding(stored[i].id, vectors[i], {
+          spaceId: space.id
+        });
+
+        if (!updated) {
+          throw new Error(`Chunk ${stored[i].id} disappeared before its ${space.id} embedding was persisted.`);
+        }
       }
 
-      await markDocumentReady(pool, document.id);
+      await markDocumentReady(pool, document.id, space.id);
 
       summary.documents.push({ id: document.id, fileName: document.fileName, chunks: stored.length });
       summary.embeddedChunks += stored.length;

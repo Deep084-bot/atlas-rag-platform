@@ -8,17 +8,17 @@ import {
   resolveEmbeddingWriteTarget,
   TABLE_STORAGE_KIND
 } from '../../server/embeddings/embeddingWriteTarget.js';
-import { BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
+import { HOSTED_BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
 import { ValidationError } from '../../server/errors.js';
 
 test('BGE resolves to the legacy storage column', () => {
-  const target = resolveEmbeddingWriteTarget(BGE_SPACE);
+  const target = resolveEmbeddingWriteTarget(HOSTED_BGE_SPACE);
 
   assert.equal(target.kind, LEGACY_STORAGE_KIND);
   assert.equal(target.column, 'embedding');
-  assert.equal(target.spaceId, BGE_SPACE.id);
+  assert.equal(target.spaceId, HOSTED_BGE_SPACE.id);
   assert.equal(target.dimensions, 384);
-  assert.equal(isTableSpace(BGE_SPACE), false);
+  assert.equal(isTableSpace(HOSTED_BGE_SPACE), false);
 });
 
 test('Voyage resolves to the chunk_embeddings table with bound input types', () => {

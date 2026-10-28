@@ -4,8 +4,10 @@ import { URL } from 'node:url';
 import { Pool } from 'pg';
 
 import { chunkText } from '../../server/ingestion/chunkText.js';
+import { EmbeddingRepository } from '../../server/embeddings/embeddingRepository.js';
 import { createEmbeddingProvider } from '../../server/embeddings/createEmbeddingProvider.js';
 import { assertRuntimeConfigMatchesManifest } from '../../server/embeddings/embeddingManifest.js';
+import { resolveEmbeddingSpaceForProvider } from '../../server/embeddings/embeddingSpaces.js';
 
 /**
  * Seeds ONLY the new ("action": "seed") documents of the retrieval-evaluation
@@ -66,10 +68,6 @@ function resolveTarget({ args, env }) {
   return { connectionString: raw, safeLabel: `${parsed.hostname}:${parsed.port || '5432'}/${database}`, database };
 }
 
-function toSqlVector(vector) {
-  return `[${vector.join(',')}]`;
-}
-
 async function documentExists(pool, id) {
   const { rows } = await pool.query('SELECT file_name FROM documents WHERE id = $1;', [id]);
   return rows[0] ?? null;
@@ -79,7 +77,7 @@ async function insertDocument(pool, { document, userId }) {
   await pool.query(
     `
       INSERT INTO documents (id, user_id, file_name, file_type, file_size_bytes, storage_path, extracted_text, source_type, status, progress, ready_at, updated_at)
-      VALUES ($1, $2, $3, 'text/plain', $4, NULL, $5, 'upload', 'ready', 100, now(), now());
+      VALUES ($1, $2, $3, 'text/plain', $4, NULL, $5, 'upload', 'chunking', 0, NULL, now());
     `,
     [document.id, userId, document.fileName, Buffer.byteLength(document.text, 'utf8'), document.text]
   );
@@ -101,6 +99,32 @@ async function insertChunks(pool, { documentId, chunks }) {
   }
 
   return stored;
+}
+
+async function markDocumentReady(pool, documentId, spaceId) {
+  const result = await pool.query(
+    `
+      UPDATE documents
+      SET status = 'ready',
+          progress = 100,
+          failure_reason = NULL,
+          ready_at = now(),
+          updated_at = now()
+      WHERE id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chunks
+          WHERE document_id = $1
+            AND (embedding IS NULL OR embedding_space_id IS DISTINCT FROM $2)
+        )
+      RETURNING id
+    `,
+    [documentId, spaceId]
+  );
+
+  if (result.rowCount !== 1) {
+    throw new Error(`Refusing to mark ${documentId} ready: it still has chunks without embeddings for space ${spaceId}.`);
+  }
 }
 
 async function resolveMarkersFromDb(pool, { documentId, marker }) {
@@ -201,7 +225,9 @@ async function main() {
 
   assertRuntimeConfigMatchesManifest(env);
   const provider = createEmbeddingProvider({ providerName: 'local' });
+  const space = resolveEmbeddingSpaceForProvider('local', env);
   const pool = new Pool({ connectionString: target.connectionString, ssl: false });
+  const embeddingRepository = new EmbeddingRepository(pool);
 
   try {
     await pool.query('CREATE EXTENSION IF NOT EXISTS vector;');
@@ -235,11 +261,20 @@ async function main() {
       }
 
       for (let i = 0; i < stored.length; i += 1) {
-        if (vectors[i].length !== 384) {
-          throw new Error(`Unexpected BGE embedding dimension ${vectors[i].length}.`);
+        if (vectors[i].length !== space.dimensions) {
+          throw new Error(`Unexpected BGE embedding dimension ${vectors[i].length}; expected ${space.dimensions}.`);
         }
-        await pool.query('UPDATE chunks SET embedding = $2::vector WHERE id = $1;', [stored[i].id, toSqlVector(vectors[i])]);
+
+        const updated = await embeddingRepository.updateChunkEmbedding(stored[i].id, vectors[i], {
+          spaceId: space.id
+        });
+
+        if (!updated) {
+          throw new Error(`Chunk ${stored[i].id} disappeared before its ${space.id} embedding was persisted.`);
+        }
       }
+
+      await markDocumentReady(pool, doc.id, space.id);
 
       summary.inserted.push({ id: doc.id, fileName: doc.fileName, chunks: stored.length });
       console.log(`  seeded ${doc.fileName} (${stored.length} chunks, 384-d)`);

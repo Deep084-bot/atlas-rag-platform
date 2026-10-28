@@ -1,5 +1,13 @@
 # Voyage production embedding migration — implementation plan
 
+> **Status correction (current branch).** This document is plan-only. The
+> implemented read/write path still uses `chunks.embedding` plus
+> `chunks.embedding_space_id`; the `chunk_embeddings` table below is a
+> **proposed Voyage target**, not deployed. Claims of "zero query downtime" or
+> rollback by a config flip are not proven and must not be used as cutover
+> evidence. There is no approved production bulk re-embedding tool. Hosted HF
+> currently returns HTTP 402, so hosted re-embedding recovery may be unavailable.
+
 Status: **plan only. Nothing in this document has been implemented, applied, or
 deployed.** Production (`DATABASE_URL` → Neon) is untouched. This plan exists so
 the cutover can be reviewed before any code or migration runs.
@@ -11,9 +19,10 @@ compares per-space vs shared storage, recommends the shared `vector(1024)` desig
 
 ## 1. Objective and invariants
 
-Move the active embedding space from BGE (`bge-small-en-v1.5-mean-l2-int8-v1`,
-384-d, local) to Voyage (`voyage-4-lite-query-document-l2-1024-v1`, 1024-d) for
-production retrieval, with zero query downtime and a proven rollback.
+Move the active embedding space from hosted BGE
+(`bge-small-en-v1.5-hosted-l2-v1`, 384-d) to Voyage (`voyage-4-lite-query-document-l2-1024-v1`, 1024-d) for
+production retrieval. The target design is a reviewed cutover with explicit
+gates; zero query downtime and rollback are goals, not established properties.
 
 Invariants:
 
@@ -34,11 +43,15 @@ Invariants:
   (`database/migrations/20260530_add_embedding_column_to_chunks.sql`).
 - Write path: `server/embeddings/embeddingService.js` →
   `EmbeddingRepository.updateChunkEmbedding()` →
-  `UPDATE chunks SET embedding = $2::vector WHERE id = $1`
-  (`server/embeddings/embeddingRepository.js:35`).
-- Read path: `server/search/searchRepository.js` →
-  `chunks.embedding <=> $1::vector` (`searchChunksByEmbedding` and
-  `searchChunksByEmbeddingForUser`).
+  `UPDATE chunks SET embedding = $2::vector, embedding_space_id = $3 WHERE id = $1`
+  (`server/embeddings/embeddingRepository.js:35`). Staging writers use the same
+  atomic provenance update.
+- Read path: `server/search/searchRepository.js` filters by
+  `embedding_space_id` and excludes legacy `NULL` rows by default before
+  comparing `chunks.embedding <=> $1::vector`.
+- Provenance migration:
+  `database/migrations/20261027_add_chunk_embedding_space.sql`. Existing
+  vectors keep `NULL` provenance and are **not** assumed hosted.
 - Space/provider selection: `EMBEDDING_PROVIDER` env drives
   `resolveActiveEmbeddingSpace()` (`server/embeddings/embeddingSpaces.js`),
   which maps to BGE or the Voyage space. Dimensions are resolved by
@@ -113,8 +126,11 @@ HNSW/IVFFlat on a column without declared dimensions (verified on PostgreSQL
 
 ## 5. Full re-embedding runbook (production)
 
-1. **Pre-req:** schema from §3 applied to production (additive only; no writes to
-   existing columns). Take a verified backup / PITR checkpoint.
+1. **Pre-req:** the provenance migration is applied and the target schema from §3
+   is reviewed separately (additive only; no writes to existing columns). Take a
+   verified backup / PITR checkpoint. No migration or backfill runs without
+   explicit operator approval and the safeguards in
+   [`production-reembedding-design.md`](./production-reembedding-design.md).
 2. **Dry run:** size the job from `SELECT count(*) FROM chunks` and average chunk
    length; publish estimated tokens, requests, wall-clock, and cost. Voyage
    `voyage-4-lite` = $0.02 / 1M tokens; `embedding_migration_progress.token_count`
@@ -152,24 +168,33 @@ corpus, so a paid/business tier and a documented rate budget are required.
 
 ## 7. Cutover
 
-- Flip the read space with a config change: set the active
-  `EMBEDDING_SPACE_ID` to the Voyage space and `EMBEDDING_PROVIDER=voyage`
+- Set `EMBEDDING_PROVIDER=voyage` only after all validation gates pass
   (production env change — **requires explicit approval; not done here**).
-- Deploy behind a runtime flag so the switch can be reverted without a rebuild.
-- Cut over reads first against the fully backfilled table; writes follow (new
-  documents embed in the active space). Monitor error rate, latency, token usage.
+- Switching is safe only if every vector used by retrieval belongs to the active
+  Voyage space. The compatibility guard must report zero incompatible rows.
+- No zero-downtime cutover is proven. Plan for a write-freeze window and a final
+  delta/lock step, or implement and test a dual-write design first.
+- Monitor error rate, latency, token usage, and ingestion failures. Keep the
+  provenance-aware application code deployed throughout.
 
 ## 8. Rollback
 
-- Because the target schema is additive and the legacy `chunks.embedding` (BGE)
-  is retained until cleanup, rollback = flip the active space flag back to BGE
-  and restart. No data loss, no re-embedding.
-- Rollback triggers: eval regression below baseline, latency SLO breach, Voyage
-  error/rate-limit storm, or cost overrun.
-- **Cleanup (only after a quiet rollback window):** drop the legacy
-  `chunks.embedding` (BGE) column and remove the dual-write flag. `chunk_embeddings`
-  (Voyage) is retained. This is the first irreversible step and should itself be a
-  reviewed migration. See Stage 6 in the Stage 0 design.
+- **Never roll back to application code that predates provenance.** Old code
+  cannot set `embedding_space_id` and may compare mixed spaces.
+- Before any Voyage vector is written, rollback is a provider/config reversal.
+- After a partial or complete Voyage re-embed, switching back to hosted BGE is
+  safe only after every Voyage-tagged row has a compatible hosted vector again.
+  Plan to re-embed or restore from a validated backup; do not silently fall back.
+- Hosted HF is currently returning HTTP 402. If it remains unavailable, the
+  safe recovery is restore from backup or continue serving the already-validated
+  space, not an unverified hosted re-embed.
+- A partial re-embedding failure must remain resumable and must not mark
+  documents ready with missing or foreign-space vectors. Keep search blocked or
+  on the last fully validated space until reconciliation passes.
+- **Cleanup is irreversible.** Do not drop `chunks.embedding`,
+  `chunks.embedding_space_id`, or indexes as an emergency rollback. Cleanup is a
+  separate reviewed migration after a full re-embed/rebaseline and a quiet
+  rollback window. See Stage 6 in the Stage 0 design.
 
 ## 9. Prerequisites / open risks
 
@@ -187,5 +212,10 @@ corpus, so a paid/business tier and a documented rate budget are required.
   dual-write window (they bypass re-embedding today).
 - Evaluation corpus large enough to trust the small staging win (§9 of
   `docs/retrieval-evaluation.md`). The current 20-case fixture is not decisive.
+- Hosted HF returns HTTP 402; hosted/local equivalence and hosted re-embedding
+  recovery cannot be assumed.
+- The local/Voyage cutover has no proven zero-downtime path and no operator-grade
+  bulk re-embedding tool; see
+  [`production-reembedding-design.md`](./production-reembedding-design.md).
 - Nothing here authorizes touching production env vars, the production database,
   or a production migration.

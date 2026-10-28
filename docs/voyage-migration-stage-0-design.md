@@ -144,6 +144,7 @@ BGE continues to resolve to the legacy `chunks.embedding` path until promotion.
 
 | space_id | storage | dims | query input | document input |
 | --- | --- | --- | --- | --- |
+| `bge-small-en-v1.5-hosted-l2-v1` | `chunks.embedding` (legacy) | 384 | none (BGE v1.5) | none |
 | `bge-small-en-v1.5-mean-l2-int8-v1` | `chunks.embedding` (legacy) | 384 | none (BGE v1.5) | none |
 | `voyage-4-lite-query-document-l2-1024-v1` | `chunk_embeddings` (Voyage) | 1024 | `query` | `document` |
 

@@ -61,8 +61,34 @@ Then edit `.env.local` with your own credentials.
 
 | Variable | Source | Default | Description |
 |----------|--------|---------|-------------|
-| `EMBEDDING_PROVIDER` | `server/app.js:62` | `huggingface` | Embedding provider: `huggingface` (HuggingFace Inference API) or `local`/`local-transformers` (stub — not implemented). |
-| `HF_API_KEY` | `server/app.js:67` | (optional if not using HuggingFace) | HuggingFace Inference API key. Required when `EMBEDDING_PROVIDER=huggingface`. |
+| `EMBEDDING_PROVIDER` | `server/embeddings/createEmbeddingProvider.js:17` | `huggingface` | Embedding provider: `huggingface` (default), `local`/`local-transformers`, or `voyage` (opt-in; requires a full re-embed and schema change). |
+| `HF_API_KEY` | `server/embeddings/createEmbeddingProvider.js:22` | (required for hosted) | HuggingFace Inference API key. Required when `EMBEDDING_PROVIDER=huggingface`. |
+| `EMBEDDING_LEGACY_UNKNOWN_POLICY` | `server/embeddings/embeddingSpaces.js:130` | `block` | `block` excludes `NULL` provenance from search/counts. `include` is a temporary hosted-only compatibility mode; it is rejected for local/Voyage. |
+
+Hosted and local BGE use 384 dimensions but are **different spaces**. Never
+compare vectors across providers or treat a stored vector as belonging to a
+space without `chunks.embedding_space_id`. See
+[`docs/embedding-migration.md`](./embedding-migration.md) and
+[`docs/local-embedding-cutover.md`](./local-embedding-cutover.md).
+
+#### Local embedding cache and model pinning
+
+Only needed when `EMBEDDING_PROVIDER=local`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBEDDING_CACHE_DIR` | provider default | Model cache directory. In Docker: `/app/model-cache`. |
+| `EMBEDDING_BUNDLED_CACHE_DIR` | unset | Verified cache bundled into the image. |
+| `LOCAL_EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | ONNX model repository. |
+| `EMBEDDING_LOCAL_REVISION` | manifest revision | Immutable model revision; keep pinned. |
+| `EMBEDDING_LOCAL_POOLING` | `mean` | `mean` or `cls`. Must match the manifest. |
+| `EMBEDDING_LOCAL_QUANTIZED` | `true` | Use int8 ONNX weights. |
+| `EMBEDDING_LOCAL_DIMENSIONS` | `384` | Must match the manifest and vector column. |
+| `EMBEDDING_LOCAL_ALLOW_REMOTE` | `false` | Allow model download on cache miss. Keep false in production. |
+| `EMBEDDING_LOCAL_STRICT` | `false` | Fail closed when runtime config/artifacts do not match the manifest. |
+
+The provider remains `huggingface` by default. Local embeddings are opt-in and
+have not been validated as a production cutover.
 
 ### OCR
 
@@ -87,6 +113,25 @@ These are prefixed with `VITE_` and embedded at build time. Set them in a `.env`
 | `VITE_AUTH_URL` | `web/src/api/auth.js:3` | fallback to `VITE_API_BASE_URL` | Explicit auth endpoint URL if different from the API base. |
 
 ---
+
+## Database Schema and Migrations
+
+For a **new empty database**, bootstrap once:
+
+```bash
+psql "$DATABASE_URL" -f database/schema.sql
+```
+
+`database/schema.sql` is not a migration. It uses `CREATE TABLE IF NOT EXISTS`,
+so applying it to an existing database does not add new columns. For an existing
+database, apply every file in `database/migrations/` in filename order before
+deploying code that depends on it. In particular,
+`20261027_add_chunk_embedding_space.sql` must run before code that reads or
+writes `chunks.embedding_space_id`.
+
+On a large table, add the column first and build the index with
+`CREATE INDEX CONCURRENTLY` outside a transaction. Do not claim zero-downtime
+cutover: that has not been proven for this workflow.
 
 ## Running Locally
 
@@ -151,6 +196,27 @@ The Vercel configuration in `vercel.json` sets:
 
 ---
 
+## Tests
+
+```bash
+npm test
+```
+
+Integration tests require a separate disposable local database (never
+`DATABASE_URL`) and a name containing `test`, `disposable`, `scratch`, or
+`sandbox`:
+
+```bash
+createdb atlas_integration_test
+ATLAS_BACKFILL_INTEGRATION_DATABASE_URL=postgresql://localhost:5432/atlas_integration_test npm test
+npm run test:integration
+```
+
+Without the integration URL, database tests skip. CI runs `npm test` against a
+`pgvector/pgvector:pg16` service.
+
+---
+
 ## Deployment
 
 ### Frontend — Vercel
@@ -169,7 +235,7 @@ The Vercel configuration in `vercel.json` sets:
    - `DATABASE_URL`, `GROQ_API_KEY`, `BETTER_AUTH_SECRET` (required)
    - `BETTER_AUTH_URL` — must be set to the Railway app URL (defaults to `localhost:8787` otherwise)
    - `WEB_ORIGIN` — must match the Vercel frontend URL
-   - `HF_API_KEY`, `EMBEDDING_PROVIDER` — for embedding service
+   - `HF_API_KEY`, `EMBEDDING_PROVIDER` — keep `EMBEDDING_PROVIDER=huggingface` unless a reviewed cutover says otherwise
    - `GROQ_MODEL`, `GROQ_TEMPERATURE`, etc. — optional overrides
 4. Deploy
 
@@ -200,7 +266,7 @@ atlas/
 │   ├── search/                   # Semantic search with pgvector
 │   ├── retrieval/                # Conversation-scoped retrieval wrapper
 │   ├── ingestion/                # Text chunking (500-char windows, 100-char overlap)
-│   ├── embeddings/               # Embedding provider abstraction, HuggingFace, local stub
+│   ├── embeddings/               # Provider abstraction, hosted/local/Voyage, spaces, provenance
 │   ├── storage/                  # File storage abstraction, local filesystem implementation
 │   ├── ocr/                      # PDF rendering, tesseract.js, sequential OCR queue
 │   └── http/                     # fetchWithRetry utility
@@ -242,8 +308,10 @@ The application uses a lazy-initialized connection pool (`server/db.js`). If `DA
 The LLM is instructed to answer using only the retrieved document context. If no chunks pass the similarity threshold (default 0.50) or term overlap gate (overlapCount >= 1), the fallback mode answers from general knowledge. If both modes fail, check:
 - Documents are fully processed (status = `ready`)
 - Documents are attached to the conversation
-- The embedding provider (HuggingFace) API key is valid and the service is reachable
-- `EMBEDDING_PROVIDER` is not set to `local` or `local-transformers` (these are not implemented)
+- The embedding provider is reachable and its credentials are valid
+- The active embedding space matches the vectors stored for the document. Run the
+  local pipeline check if you recently switched providers:
+  `node scripts/dev/local-pipeline-e2e.mjs`
 
 ### Uploaded PDF shows "Processing..." forever
 
@@ -266,9 +334,19 @@ Authentication uses httpOnly cookies with `sameSite: "none"` and `secure: true`.
 - If using a custom domain or HTTPS in dev, update both values
 - The production setup requires HTTPS for `sameSite: "none"` to work
 
-### "LocalTransformersProvider is not implemented yet"
+### Local embeddings fail to initialize
 
-The `EMBEDDING_PROVIDER` env var is set to `local` or `local-transformers`. Both are stubs that throw "not implemented yet." Set `EMBEDDING_PROVIDER=huggingface` and provide a valid `HF_API_KEY`.
+With `EMBEDDING_PROVIDER=local`, verify the pinned artifacts and runtime config:
+
+```bash
+node scripts/dev/embedding-artifacts.mjs --cache-dir ./model-cache --check-env
+```
+
+If `EMBEDDING_LOCAL_STRICT=true`, a revision/pooling/quantization mismatch fails
+closed. For a deliberate first download, set
+`EMBEDDING_LOCAL_ALLOW_REMOTE=true`; keep it `false` in production. To avoid the
+local provider entirely, use the default `EMBEDDING_PROVIDER=huggingface` with a
+valid `HF_API_KEY`.
 
 ### Streaming chat stops after a few tokens
 

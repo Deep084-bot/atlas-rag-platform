@@ -37,6 +37,9 @@
 - pgvector vector(384) column on chunks table
 - HNSW index with cosine distance (`vector_cosine_ops`)
 - Query embedding via HuggingFace Inference API (model: BAAI/bge-small-en-v1.5)
+- Hosted, local, and Voyage provider spaces with persisted `embedding_space_id` provenance
+- Fail-safe legacy `NULL` provenance policy with a hosted-only explicit compatibility mode
+- Sanitized provider/document failure reasons (paths, credentials, and URLs redacted)
 - Conversation-scoped search (filter by conversation's attached documents)
 - User-scoped search (filter by user_id)
 - Top-K and similarity threshold limits (configurable, max 12)
@@ -64,6 +67,7 @@
 
 ### Error Handling
 - Classified error hierarchy: ValidationError, ProviderError, DatabaseError
+- API/persisted failure reasons sanitized for filesystem paths, credentials, and database URLs
 - `classifyError` maps errors to categories and HTTP status codes (400, 502, 503, 500)
 - Global ErrorBoundary React component with recovery UI
 - Unhandled rejection and uncaught exception logging
@@ -94,9 +98,14 @@
 - Recent commit `f6f0b1e` ("fix: enable cross-site auth cookies") and `e4779ef` ("fix: add production start script") indicate ongoing auth configuration issues
 - The `auth.js` sets `sameSite: "none"` with `secure: true`, which requires HTTPS — dev environment may have cookie compatibility issues
 
-### Local Embedding Provider Stub
-- `server/embeddings/LocalTransformersProvider.js` is an empty stub — both `embed()` and `embedMany()` throw `"LocalTransformersProvider is not implemented yet."`
-- The `EMBEDDING_PROVIDER` env var accepts `'local'` or `'local-transformers'` but will crash at runtime if selected
+### Embedding Cutover Validation
+- The local provider is implemented with pinned Xenova ONNX artifacts, strict cache checks, and sanitized failures
+- `EMBEDDING_PROVIDER` defaults to `huggingface`; production remains hosted
+- Hosted and local BGE are separate spaces even at 384 dimensions; every vector write must carry `chunks.embedding_space_id`
+- Hosted HF returned HTTP 402, so hosted/local retrieval equivalence and hosted re-embedding recovery remain unmeasured
+- No production bulk re-embedding tool or zero-downtime cutover proof exists; see
+  [`local-embedding-cutover.md`](./local-embedding-cutover.md) and
+  [`production-reembedding-design.md`](./production-reembedding-design.md)
 
 ### Streaming Message Persistence Race Condition
 - Server persists the assistant message AFTER `response.end()` in the stream route (`routes.js:156-177`)
@@ -165,7 +174,7 @@ Features that are scaffolded but not implemented, based exclusively on code evid
 | `computeOverlap` duplicated | Identical function exists in both files with no shared import | `chatService.js:6-14`, `generationService.js:4-12` |
 | Hardcoded RAG thresholds | 0.50 similarity and overlapCount >= 1 are magic numbers | `chatService.js:361,584`, `generationService.js:95` |
 | No login-specific rate limiting | Auth limiter covers credential endpoints at 10/15min, but doesn't distinguish between login and signup failures | `server/app.js` |
-| Hardcoded embedding dimension | Vector(384) is tied to `BAAI/bge-small-en-v1.5` — switching models requires schema migration | `database/schema.sql` |
+| Embedding dimension/space changes | `vector(384)` and the provenance column require an additive migration plus a full re-embed; hosted/local cutover is not validated | `database/schema.sql`, `database/migrations/` |
 | Streaming fetch uses no retry | `GroqProvider.generateStream()` calls `fetch()` directly, not `fetchWithRetry` | `server/generation/GroqProvider.js:101` |
 
 ### Frontend
@@ -215,11 +224,11 @@ Features that are scaffolded but not implemented, based exclusively on code evid
 - Production start script
 - Additional error handling cleanup needed
 
-### v1.3 — Multi-Provider Support (scaffolded)
-*Provider abstractions exist but only one implementation each.*
+### v1.3 — Multi-Provider Support (partial)
+*Generation/storage have one implementation; embeddings have hosted, local, and Voyage paths.*
 
 - Generation: add OpenAI or Anthropic provider alongside Groq
-- Embeddings: implement LocalTransformersProvider (stub exists)
+- Embeddings: validate and approve a production cutover; the local provider exists but production remains hosted
 - Storage: add S3/R2 provider alongside LocalStorageProvider
 
 ### v1.4 — Tenant Isolation (scaffolded)

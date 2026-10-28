@@ -49,6 +49,40 @@ export function parseBoolean(value, fallback) {
 
 const MODEL_DIR_SEGMENTS = Object.freeze(['Xenova', 'bge-small-en-v1.5']);
 
+export const DEFAULT_BUNDLED_CACHE_DIRNAME = 'model-cache';
+
+export function resolveBundledCacheDir({ env = process.env, cwd = process.cwd() } = {}) {
+  const configured = env.EMBEDDING_BUNDLED_CACHE_DIR || env.ATLAS_MODEL_CACHE_DIR;
+
+  if (configured) {
+    return path.resolve(cwd, configured);
+  }
+
+  return path.join(cwd, DEFAULT_BUNDLED_CACHE_DIRNAME);
+}
+
+export function hasPinnedArtifacts(cacheDir, manifest = EMBEDDING_MANIFEST) {
+  if (!cacheDir) {
+    return false;
+  }
+
+  const modelDir = resolveModelDir(cacheDir, manifest.model.revision);
+
+  if (!modelDir) {
+    return false;
+  }
+
+  return manifest.artifacts.every((artifact) => {
+    const filePath = path.join(modelDir, artifact.path);
+
+    try {
+      return existsSync(filePath) && statSync(filePath).size === artifact.bytes;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function resolveModelDir(cacheDir, revision = EMBEDDING_MANIFEST.model.revision) {
   if (!cacheDir) {
     return null;
@@ -92,7 +126,7 @@ export async function verifyArtifacts({ cacheDir, manifest = EMBEDDING_MANIFEST 
     const { size } = statSync(filePath);
     const actual = await sha256File(filePath);
     const ok = actual === artifact.sha256 && size === artifact.bytes;
-    const reason = ok ? undefined : actual === artifact.sha256 ? 'size-mismatch' : 'checksum-mismatch';
+    const reason = ok ? undefined : size === artifact.bytes ? 'checksum-mismatch' : 'size-mismatch';
 
     checked.push({ path: artifact.path, ok, reason, expected: artifact.sha256, actual, bytes: size, expectedBytes: artifact.bytes });
 
@@ -120,7 +154,7 @@ export function runtimeConfigFromEnv(env = process.env) {
     normalize: parseBoolean(env.EMBEDDING_LOCAL_NORMALIZE, EMBEDDING_MANIFEST.normalize),
     dimensions: Number(env.EMBEDDING_LOCAL_DIMENSIONS) || EMBEDDING_MANIFEST.dimensions,
     cacheDir: env.EMBEDDING_CACHE_DIR || undefined,
-    allowRemoteModels: parseBoolean(env.EMBEDDING_LOCAL_ALLOW_REMOTE, true)
+    allowRemoteModels: parseBoolean(env.EMBEDDING_LOCAL_ALLOW_REMOTE, false)
   };
 }
 

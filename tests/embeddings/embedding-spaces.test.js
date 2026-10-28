@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  BGE_SPACE_ID,
   DEFAULT_EMBEDDING_SPACE_ID,
   EMBEDDING_SPACES,
+  HOSTED_BGE_SPACE_ID,
+  LOCAL_BGE_SPACE_ID,
   VOYAGE_DIMENSIONS_DEFAULT,
   VOYAGE_SPACE_ID,
   expectedDimensionsForProvider,
@@ -12,18 +13,26 @@ import {
   resolveActiveEmbeddingSpace,
   resolveDimensionsForService,
   resolveEmbeddingSpaceForProvider,
+  resolveLegacyUnknownPolicy,
   spaceIdForProvider,
   voyageSpaceId
 } from '../../server/embeddings/embeddingSpaces.js';
 
-test('registers a versioned BGE space and a versioned Voyage space', () => {
-  assert.equal(BGE_SPACE_ID, 'bge-small-en-v1.5-mean-l2-int8-v1');
-  assert.equal(BGE_SPACE_ID, DEFAULT_EMBEDDING_SPACE_ID);
+test('registers distinct hosted/local BGE spaces and a versioned Voyage space', () => {
+  assert.equal(HOSTED_BGE_SPACE_ID, 'bge-small-en-v1.5-hosted-l2-v1');
+  assert.equal(LOCAL_BGE_SPACE_ID, 'bge-small-en-v1.5-mean-l2-int8-v1');
+  assert.notEqual(HOSTED_BGE_SPACE_ID, LOCAL_BGE_SPACE_ID);
+  assert.equal(DEFAULT_EMBEDDING_SPACE_ID, HOSTED_BGE_SPACE_ID);
   assert.equal(VOYAGE_SPACE_ID, voyageSpaceId(VOYAGE_DIMENSIONS_DEFAULT));
   assert.equal(VOYAGE_SPACE_ID, 'voyage-4-lite-query-document-l2-1024-v1');
 
-  assert.equal(EMBEDDING_SPACES[BGE_SPACE_ID].dimensions, 384);
-  assert.equal(EMBEDDING_SPACES[BGE_SPACE_ID].normalization, 'l2');
+  assert.equal(EMBEDDING_SPACES[HOSTED_BGE_SPACE_ID].dimensions, 384);
+  assert.equal(EMBEDDING_SPACES[HOSTED_BGE_SPACE_ID].normalization, 'l2');
+  assert.equal(EMBEDDING_SPACES[HOSTED_BGE_SPACE_ID].legacyUnknownPolicy, 'block');
+  assert.deepEqual(EMBEDDING_SPACES[HOSTED_BGE_SPACE_ID].providers, ['huggingface']);
+  assert.equal(EMBEDDING_SPACES[LOCAL_BGE_SPACE_ID].quantization, 'int8');
+  assert.equal(EMBEDDING_SPACES[LOCAL_BGE_SPACE_ID].legacyUnknownPolicy, 'block');
+  assert.deepEqual(EMBEDDING_SPACES[LOCAL_BGE_SPACE_ID].providers, ['local', 'local-transformers']);
 
   assert.equal(EMBEDDING_SPACES[VOYAGE_SPACE_ID].dimensions, 1024);
   assert.equal(EMBEDDING_SPACES[VOYAGE_SPACE_ID].model, 'voyage-4-lite');
@@ -31,18 +40,50 @@ test('registers a versioned BGE space and a versioned Voyage space', () => {
   assert.equal(EMBEDDING_SPACES[VOYAGE_SPACE_ID].documentInputType, 'document');
 });
 
-test('maps provider names to the expected embedding space ids', () => {
-  assert.equal(spaceIdForProvider('huggingface'), BGE_SPACE_ID);
-  assert.equal(spaceIdForProvider('local'), BGE_SPACE_ID);
-  assert.equal(spaceIdForProvider('local-transformers'), BGE_SPACE_ID);
+test('maps provider names to distinct hosted/local embedding space ids', () => {
+  assert.equal(spaceIdForProvider('huggingface'), HOSTED_BGE_SPACE_ID);
+  assert.equal(spaceIdForProvider('local'), LOCAL_BGE_SPACE_ID);
+  assert.equal(spaceIdForProvider('local-transformers'), LOCAL_BGE_SPACE_ID);
   assert.equal(spaceIdForProvider('voyage'), VOYAGE_SPACE_ID);
   assert.equal(spaceIdForProvider('unknown'), null);
 });
 
 test('resolves the active space from EMBEDDING_PROVIDER', () => {
-  assert.equal(resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'huggingface' }).id, BGE_SPACE_ID);
+  assert.equal(resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'huggingface' }).id, HOSTED_BGE_SPACE_ID);
+  assert.equal(resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'local' }).id, LOCAL_BGE_SPACE_ID);
   assert.equal(resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'voyage' }).id, VOYAGE_SPACE_ID);
-  assert.equal(resolveActiveEmbeddingSpace({}).id, BGE_SPACE_ID);
+  assert.equal(resolveActiveEmbeddingSpace({}).id, HOSTED_BGE_SPACE_ID);
+  assert.equal(resolveActiveEmbeddingSpace({}).legacyUnknownPolicy, 'block');
+  assert.equal(resolveLegacyUnknownPolicy({}), 'block');
+});
+
+test('hosted legacy-unknown inclusion requires an explicit compatibility setting', () => {
+  const compatible = resolveActiveEmbeddingSpace({
+    EMBEDDING_PROVIDER: 'huggingface',
+    EMBEDDING_LEGACY_UNKNOWN_POLICY: 'include'
+  });
+
+  assert.equal(compatible.id, HOSTED_BGE_SPACE_ID);
+  assert.equal(compatible.legacyUnknownPolicy, 'include');
+  assert.equal(EMBEDDING_SPACES[HOSTED_BGE_SPACE_ID].legacyUnknownPolicy, 'block', 'the default registry is never mutated');
+});
+
+test('legacy-unknown compatibility cannot be enabled for local or Voyage spaces', () => {
+  assert.throws(
+    () => resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'local', EMBEDDING_LEGACY_UNKNOWN_POLICY: 'include' }),
+    /only supported for the hosted BGE space/
+  );
+  assert.throws(
+    () => resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'voyage', EMBEDDING_LEGACY_UNKNOWN_POLICY: 'include' }),
+    /only supported for the hosted BGE space/
+  );
+});
+
+test('invalid legacy-unknown policy values fail closed', () => {
+  assert.throws(
+    () => resolveActiveEmbeddingSpace({ EMBEDDING_PROVIDER: 'huggingface', EMBEDDING_LEGACY_UNKNOWN_POLICY: 'assume' }),
+    /must be "block" or "include"/
+  );
 });
 
 test('voyage output dimension override produces a derived space id', () => {

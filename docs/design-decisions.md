@@ -160,7 +160,7 @@ No alternatives (MongoDB, SQLite, Pinecone, Weaviate) are referenced anywhere in
 
 ### Future Improvements
 
-- The `LocalTransformersProvider` exists as a stub but throws "not implemented yet." Once implemented, it would allow local embedding inference without an external API.
+- `LocalTransformersProvider` provides pinned in-process ONNX inference without an external embedding API; its separate space requires a provenance-guarded cutover before use.
 - The `EmbeddingProvider` abstract class allows adding new embedding providers (e.g., OpenAI, Cohere) by implementing `embed()` and `embedMany()`.
 
 ---

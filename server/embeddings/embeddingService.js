@@ -74,7 +74,9 @@ export function createEmbeddingService({
 
   async function persistChunkEmbedding(chunk, embedding) {
     if (!tableSpace) {
-      return embeddingRepository.updateChunkEmbedding(chunk.id, embedding);
+      return embeddingRepository.updateChunkEmbedding(chunk.id, embedding, {
+        spaceId: space?.id ?? null
+      });
     }
 
     const l2Norm = computeEmbeddingL2Norm(embedding, { dimensions: embeddingDimensions });
@@ -165,6 +167,7 @@ export function createEmbeddingService({
         return {
           documentId,
           spaceId: space.id,
+          legacyUnknownPolicy: space.legacyUnknownPolicy,
           totalChunks: verification.totalChunks,
           embeddedChunks: verification.embeddedChunks,
           missingChunks: verification.missingChunks,
@@ -173,10 +176,16 @@ export function createEmbeddingService({
       }
 
       const totalChunks = await embeddingRepository.countTotalChunks(documentId, { client });
-      const embeddedChunks = await embeddingRepository.countEmbeddedChunks(documentId, { client });
+      const embeddedChunks = await embeddingRepository.countEmbeddedChunks(documentId, {
+        client,
+        spaceId: space?.id ?? null,
+        includeLegacyUnknown: space?.legacyUnknownPolicy === 'include'
+      });
 
       return {
         documentId,
+        spaceId: space?.id ?? null,
+        legacyUnknownPolicy: space?.legacyUnknownPolicy ?? null,
         totalChunks,
         embeddedChunks,
         complete: totalChunks === embeddedChunks

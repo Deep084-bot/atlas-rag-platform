@@ -14,7 +14,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --only=production --ignore-scripts && npm cache clean --force
 
 # onnxruntime-node ships native runtimes for darwin/linux/win32 on x64+arm64
 # (~93 MB). Keep only the native runtime for the *build target* architecture and
@@ -85,7 +85,7 @@ FROM node:20-alpine AS frontend-build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 COPY web/ ./web/
 COPY tailwind.config.cjs ./

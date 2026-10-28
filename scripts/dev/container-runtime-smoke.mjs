@@ -12,8 +12,14 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+
+import {
+  EMBEDDING_MANIFEST,
+  parseBoolean,
+  resolveArtifactPath,
+  resolveBundledCacheDir
+} from '../../server/embeddings/embeddingManifest.js';
 
 function readCgroup() {
   const out = {};
@@ -32,11 +38,19 @@ function readCgroup() {
   return out;
 }
 
-const MODEL = 'Xenova/bge-small-en-v1.5';
-const CACHE_DIR = process.env.EMBEDDING_CACHE_DIR || path.join(os.tmpdir(), 'atlas-embedding-cache');
-const quantized = String(process.env.EMBEDDING_LOCAL_QUANTIZED || '').toLowerCase() === 'true';
-const pooling = process.env.EMBEDDING_LOCAL_POOLING || 'mean';
-const onnxFile = path.join(CACHE_DIR, MODEL, 'onnx', quantized ? 'model_quantized.onnx' : 'model.onnx');
+const MODEL = EMBEDDING_MANIFEST.model.repository;
+const REVISION = process.env.EMBEDDING_LOCAL_REVISION || EMBEDDING_MANIFEST.model.revision;
+const CACHE_DIR = process.env.EMBEDDING_CACHE_DIR || resolveBundledCacheDir();
+const quantized = parseBoolean(
+  process.env.EMBEDDING_LOCAL_QUANTIZED,
+  EMBEDDING_MANIFEST.quantization === 'int8'
+);
+const pooling = process.env.EMBEDDING_LOCAL_POOLING || EMBEDDING_MANIFEST.pooling;
+const onnxFile = resolveArtifactPath(
+  CACHE_DIR,
+  quantized ? 'onnx/model_quantized.onnx' : 'onnx/model.onnx',
+  REVISION
+);
 
 const result = {
   node: process.version,
@@ -69,7 +83,16 @@ result.healthBeforeModelLoad = await health();
 const rssBeforeMb = +(process.memoryUsage().rss / 1024 / 1024).toFixed(1);
 
 const t0 = Date.now();
-const provider = new LocalTransformersProvider({ model: MODEL, pooling, normalize: true, quantized, cacheDir: CACHE_DIR });
+const provider = new LocalTransformersProvider({
+  model: MODEL,
+  revision: REVISION,
+  pooling,
+  normalize: true,
+  quantized,
+  cacheDir: CACHE_DIR,
+  allowRemoteModels: false,
+  strictCache: true
+});
 const texts = ['warmup', 'How long do I have to return a product for a refund?', 'The company is headquartered in Seattle.'];
 const vectors = await provider.embedMany(texts);
 const initMs = Date.now() - t0;

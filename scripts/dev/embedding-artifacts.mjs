@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -42,27 +43,91 @@ function parseArgs(argv) {
   return args;
 }
 
-async function downloadArtifact({ cacheDir, artifact, revision }) {
-  const target = resolveArtifactPath(cacheDir, artifact.path, revision);
-  const url = `https://huggingface.co/${EMBEDDING_MANIFEST.model.repository}/resolve/${revision}/${artifact.path}`;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+const DOWNLOAD_ATTEMPTS = 3;
 
-  const response = await fetch(url, { redirect: 'follow' });
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchArtifact({ artifact, revision }) {
+  const url = `https://huggingface.co/${EMBEDDING_MANIFEST.model.repository}/resolve/${revision}/${artifact.path}`;
+  const response = await fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+  });
 
   if (!response.ok) {
-    throw new Error(`Failed to download ${artifact.path} (HTTP ${response.status}) from pinned revision.`);
+    const error = new Error(
+      `Failed to download ${artifact.path} (HTTP ${response.status}) from pinned revision.`
+    );
+    error.retryable = response.status === 429 || response.status >= 500;
+    throw error;
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
+
+  if (buffer.length !== artifact.bytes) {
+    const error = new Error(
+      `Size mismatch for ${artifact.path}: expected ${artifact.bytes} bytes, got ${buffer.length}. Refusing to write.`
+    );
+    error.retryable = false;
+    throw error;
+  }
+
   const actual = sha256Buffer(buffer);
 
   if (actual !== artifact.sha256) {
-    throw new Error(`Checksum mismatch for ${artifact.path}: expected ${artifact.sha256}, got ${actual}. Refusing to write.`);
+    const error = new Error(
+      `Checksum mismatch for ${artifact.path}: expected ${artifact.sha256}, got ${actual}. Refusing to write.`
+    );
+    error.retryable = false;
+    throw error;
   }
 
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, buffer);
+  return buffer;
+}
 
-  return { path: artifact.path, bytes: buffer.length };
+async function publishArtifactAtomically(target, buffer) {
+  const directory = path.dirname(target);
+  const tempPath = path.join(
+    directory,
+    `.${path.basename(target)}.${process.pid}.${randomUUID()}.tmp`
+  );
+
+  await mkdir(directory, { recursive: true });
+
+  try {
+    await writeFile(tempPath, buffer);
+    await rename(tempPath, target);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
+}
+
+async function downloadArtifact({ cacheDir, artifact, revision }) {
+  const target = resolveArtifactPath(cacheDir, artifact.path, revision);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const buffer = await fetchArtifact({ artifact, revision });
+      await publishArtifactAtomically(target, buffer);
+      return { path: artifact.path, bytes: buffer.length, attempts: attempt };
+    } catch (error) {
+      lastError = error;
+
+      if (error.retryable === false || attempt === DOWNLOAD_ATTEMPTS) {
+        break;
+      }
+
+      await sleep(250 * 2 ** (attempt - 1));
+    }
+  }
+
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Unable to fetch ${artifact.path} after ${DOWNLOAD_ATTEMPTS} attempts: ${reason}`);
 }
 
 async function main() {

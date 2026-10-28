@@ -3,6 +3,7 @@ import { applyTransactionTimeouts, DEFAULT_TRANSACTION_TIMEOUTS } from '../db/tr
 import { DEFAULT_LEASE_MS, MAX_LEASE_MS } from './embeddingBackfillProgressRepository.js';
 import { computeEmbeddingL2Norm, isTableSpace } from './embeddingWriteTarget.js';
 import { resolveDimensionsForService } from './embeddingSpaces.js';
+import { sanitizePublicErrorDetail } from '../security/sanitize.js';
 import {
   DEFAULT_EMBEDDING_ELIGIBILITY_POLICY,
   assertEmbeddingEligibilityPolicy,
@@ -31,17 +32,13 @@ function delay(ms) {
 
 function sanitizeFailureReason(error) {
   const message = error instanceof Error ? error.message : String(error ?? '');
-  const cleaned = message.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+  const sanitized = sanitizePublicErrorDetail(message, { maxLength: MAX_FAILURE_REASON_LENGTH });
 
-  if (cleaned.length === 0) {
+  if (sanitized.length === 0) {
     return 'Embedding backfill failed.';
   }
 
-  if (cleaned.length > MAX_FAILURE_REASON_LENGTH) {
-    return `${cleaned.slice(0, MAX_FAILURE_REASON_LENGTH - 1).trimEnd()}…`;
-  }
-
-  return cleaned;
+  return sanitized;
 }
 
 /**
