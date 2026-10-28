@@ -1,15 +1,28 @@
 # Embedding space migration (Stage 2.3)
 
-This document describes the pinned INT8 local embedding space, the manifest that
-defines it, and a **proposed** production schema change. The schema change is
-**documented only and has not been applied**. Production vectors, the database
+This document describes the distinct hosted/local BGE embedding spaces, the
+manifest that defines the local INT8 space, and the additive provenance
+migration. The migration file and application code exist in this branch; it has
+**not** been applied to production. Production vectors, the production database
 schema, and the default `huggingface` provider are unchanged.
+
+See [`docs/local-embedding-cutover.md`](./local-embedding-cutover.md) for the
+hosted-BGE-to-local-BGE cutover and rollback procedure.
 
 ## Embedding manifest
 
 The single source of truth is `server/embeddings/embeddingManifest.js`. The
 runtime configuration, the Docker image, and the migration tooling all read from
 it, and mismatches fail loudly instead of silently diverging.
+
+There are two separate 384-dimensional BGE spaces:
+
+| Space | ID | Provider | Model |
+| --- | --- | --- | --- |
+| Hosted BGE | `bge-small-en-v1.5-hosted-l2-v1` | `huggingface` | `BAAI/bge-small-en-v1.5` |
+| Local BGE INT8 | `bge-small-en-v1.5-mean-l2-int8-v1` | `local` | `Xenova/bge-small-en-v1.5` |
+
+The local space is defined by the manifest:
 
 | Field | Value |
 | --- | --- |
@@ -37,53 +50,77 @@ Artifacts (SHA-256, pinned revision):
 The Docker image bakes these artifacts into `/app/model-cache` under
 `<cacheDir>/Xenova/bge-small-en-v1.5/<revision>/` and sets
 `EMBEDDING_LOCAL_ALLOW_REMOTE=false`, so runtime startup needs no network access.
-`EMBEDDING_LOCAL_STRICT=true` makes `createEmbeddingProvider` throw at startup if
-any local embedding env var disagrees with the manifest.
+`EMBEDDING_LOCAL_STRICT=true` makes `createEmbeddingProvider` reject manifest
+config disagreements and makes the provider verify every bundled artifact's size
+and SHA-256 before model initialization.
 
-## Why a new space
+## Why separate spaces
 
 The hosted `BAAI/bge-small-en-v1.5` path and the local `Xenova` ONNX conversion
-are different weight graphs, and the stored vectors' pooling is unverified. The
-safe assumption is that existing `chunks.embedding` values belong to an
-**older space** and must not be mixed with new local vectors in one query.
+are different weight graphs. Even at the same 384 dimensions, equivalence has not
+been demonstrated, so vectors from one path must not be compared with the other.
+Existing `chunks.embedding` rows were written before provenance existed and are
+therefore **legacy/unknown**, not implicitly hosted or local.
 
-## Proposed production schema change (NOT APPLIED)
+Hosted and local write paths now tag new rows with their respective space IDs.
+Retrieval is scoped to one space and fails closed if incompatible rows exist:
 
-An additive, non-destructive migration to record embedding-space provenance and
-let retrieval filter to a single space:
+- the default policy blocks `NULL` legacy rows for every space;
+- `EMBEDDING_LEGACY_UNKNOWN_POLICY=include` is a temporary hosted-only
+  compatibility mode for existing hosted rows without provenance;
+- local/Voyage search always rejects `NULL` and foreign-space rows;
+- the compatibility check is global, so one incompatible row blocks all users.
+
+## Additive schema migration (NOT APPLIED TO PRODUCTION)
+
+The migrations are split for safe production rollout:
+
+- `database/migrations/20261027_add_chunk_embedding_space.sql` — column only
+  (additive, transaction-safe). Adds `chunks.embedding_space_id` (text, NULL)
+  and its comment.
+- `database/migrations/20261028_add_chunk_embedding_space_index_concurrently.sql`
+  — index only, **must run outside a transaction** via `CREATE INDEX
+  CONCURRENTLY`. On large tables this avoids long locks; a failed concurrent
+  build leaves an INVALID index that must be dropped before retrying.
 
 ```sql
-CREATE TABLE IF NOT EXISTS embedding_spaces (
-  id text PRIMARY KEY,
-  model_repository text NOT NULL,
-  model_revision text NOT NULL,
-  pooling text NOT NULL,
-  normalization text NOT NULL,
-  dimensions integer NOT NULL,
-  quantization text NOT NULL,
-  manifest jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+-- 20261027 (column)
+ALTER TABLE chunks
+  ADD COLUMN IF NOT EXISTS embedding_space_id text;
 
-ALTER TABLE chunks ADD COLUMN IF NOT EXISTS embedding_space_id text REFERENCES embedding_spaces(id);
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS embedding_space_id text REFERENCES embedding_spaces(id);
+COMMENT ON COLUMN chunks.embedding_space_id IS
+  'Embedding space that produced chunks.embedding. NULL means legacy/unknown provenance and must not be treated as a hosted or local vector without evidence.';
 
-CREATE INDEX IF NOT EXISTS chunks_embedding_space_idx ON chunks (embedding_space_id);
-
--- Per-space vector index. A partial HNSW index per space keeps spaces isolated.
-CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_space_idx
-  ON chunks USING hnsw (embedding vector_cosine_ops)
-  WHERE embedding_space_id IS NOT NULL;
+-- 20261028 (index, outside transaction)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS chunks_embedding_space_idx
+  ON chunks (embedding_space_id);
 ```
 
-Backfill would tag all existing rows with a legacy space id (e.g.
-`legacy-huggingface-<unknown-pooling>`), and retrieval would always filter by a
-single `embedding_space_id`. Re-indexing HNSW is a maintenance operation and
-should be scheduled. **This migration is not applied in this stage.**
+`database/schema.sql` is a bootstrap file for a new/empty database. It uses
+`CREATE TABLE IF NOT EXISTS`, so applying it to an existing database does **not**
+add this column and may fail when it tries to create the index. The migrations
+above must run before the provenance-aware application is deployed. On a large
+table **do not** create the index inside a transaction; use the concurrent
+migration outside a transaction. For disposable/test databases either approach is
+fine.
 
-The staging tooling avoids this schema change entirely by writing new vectors to
-a separate shadow table (`embedding_shadow_chunks`), leaving production tables
-and old vectors untouched.
+`NULL` means legacy/unknown provenance. Do not infer a provider from vector
+dimensions or values. The default `block` policy excludes those rows from search
+and from "fully embedded" counts. A hosted deployment may opt into
+`EMBEDDING_LEGACY_UNKNOWN_POLICY=include` only as a temporary compatibility step;
+the setting is rejected for local/Voyage and should be removed after backfill.
+The migration is additive and does not rewrite vectors, drop indexes, or change
+the `vector(384)` type.
+
+Retrieval applies `chunks.embedding_space_id` filters and a global compatibility
+check. The check returns a sanitized `EmbeddingSpaceError` (HTTP 503) listing only
+space IDs and counts, never document text or vectors. It is global, not
+user-scoped, and runs on every search; a scoped/indexed design is required before
+relying on it at production scale.
+
+The staging tooling still avoids the production schema change by writing new
+vectors to a separate shadow table (`embedding_shadow_chunks`), leaving production
+tables and old vectors untouched.
 
 ## Staging runbook (exact commands)
 
@@ -121,11 +158,22 @@ falls back to `DATABASE_URL`), the target is not identical to `DATABASE_URL`, th
 database name looks staging/disposable, `--confirm-disposable` is set for
 `--apply`, and `--space` matches the manifest.
 
-## Rollback
+## Staging rollback
 
-New vectors live only in `embedding_shadow_chunks`; production `chunks.embedding`
-is never written. Rollback is `DROP TABLE embedding_shadow_chunks,
-embedding_migration_progress;`. Old vectors remain intact.
+New staging vectors live only in `embedding_shadow_chunks`; production
+`chunks.embedding` is never written. Rollback is `DROP TABLE embedding_shadow_chunks,
+embedding_migration_progress;`. Old vectors remain intact. For the production
+hosted-to-local rollback, see `docs/local-embedding-cutover.md`.
+
+## Production re-embedding
+
+The checked-in migration tooling writes only to the shadow table
+`embedding_shadow_chunks` and refuses production-like targets. The per-document
+`POST /documents/:id/embed` route is not an operator bulk workflow. Before any
+production re-embed, use the design and safety gates in
+[`docs/production-reembedding-design.md`](./production-reembedding-design.md).
+Do not add an unrestricted bulk writer or run a staging script against
+production.
 
 ## Voyage embeddings (opt-in, separate space)
 
@@ -148,10 +196,10 @@ Key constraints:
   (`voyage-4-lite`/`voyage-4`/`voyage-4-large`) is appropriate. The domain models
   (`voyage-code-4`, `voyage-law-2`, `voyage-finance-2`) are specialized and are
   not recommended for general document RAG.
-- The `embedding_spaces` / `embedding_space_id` proposal above applies equally to
-  a Voyage space (it is not BGE-specific). A Voyage migration would add a new
-  space row, a target column or table of the chosen dimension, and re-embed every
-  chunk with Voyage.
+- The `chunks.embedding_space_id` provenance column applies equally to a Voyage
+  space (it is not BGE-specific). A Voyage migration would use a target column or
+  table of the chosen dimension, tag its rows, and re-embed every chunk with
+  Voyage.
 - Use the shadow-table staging path (`embedding_shadow_chunks`) with a matching
   dimension before touching production.
 

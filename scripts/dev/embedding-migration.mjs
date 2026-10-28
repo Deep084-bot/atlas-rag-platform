@@ -6,7 +6,6 @@ import { createEmbeddingProvider } from '../../server/embeddings/createEmbedding
 import { VoyageProvider } from '../../server/embeddings/VoyageProvider.js';
 import { EMBEDDING_MANIFEST, assertRuntimeConfigMatchesManifest } from '../../server/embeddings/embeddingManifest.js';
 import {
-  BGE_SPACE_ID,
   VOYAGE_SPACE_ID,
   VOYAGE_MODEL_DEFAULT,
   getEmbeddingSpace,

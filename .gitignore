@@ -9,6 +9,7 @@ server/dist
 coverage
 .DS_Store
 uploads/
+model-cache/
 eng.traineddata
 atlas-probe-20261023T141826Z.txt
 atlasTest.txt

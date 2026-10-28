@@ -25,12 +25,9 @@ export function getPool() {
   return pool;
 }
 
-export async function verifyDatabaseConnection() {
-  console.log(
-    "verifyDatabaseConnection DATABASE_URL:",
-    process.env.DATABASE_URL ? "FOUND" : "MISSING"
-  );
+import { sanitizeServerLogDetail } from './security/sanitize.js';
 
+export async function verifyDatabaseConnection() {
   const pool = getPool();
 
   if (!pool) {
@@ -41,7 +38,8 @@ export async function verifyDatabaseConnection() {
     await pool.query("SELECT 1");
     console.log("Neon database connection verified");
   } catch (err) {
-    console.error("DATABASE ERROR:", err);
+    const detail = err instanceof Error ? err.message : String(err ?? '');
+    console.error("DATABASE ERROR:", sanitizeServerLogDetail(detail));
     throw err;
   }
 }

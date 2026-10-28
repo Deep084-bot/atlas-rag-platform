@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 import { extractTextFromUpload } from './extractText.js';
 import { ProviderError } from '../errors.js';
+import { sanitizePublicErrorDetail } from '../security/sanitize.js';
 
 const OCR_TEXT_MIN_LENGTH = 50;
 const MAX_OCR_PAGES = 10;
@@ -50,20 +51,9 @@ function sanitizeFailureReason(error) {
     raw = 'Document ingestion failed.';
   }
 
-  const cleaned = raw
-    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const sanitized = sanitizePublicErrorDetail(raw, { maxLength: MAX_FAILURE_REASON_LENGTH });
 
-  if (cleaned.length === 0) {
-    return 'Document ingestion failed.';
-  }
-
-  if (cleaned.length > MAX_FAILURE_REASON_LENGTH) {
-    return `${cleaned.slice(0, MAX_FAILURE_REASON_LENGTH - 1).trimEnd()}…`;
-  }
-
-  return cleaned;
+  return sanitized || 'Document ingestion failed.';
 }
 
 const DICTIONARY = new Set([

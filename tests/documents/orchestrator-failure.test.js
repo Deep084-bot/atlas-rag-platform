@@ -220,6 +220,26 @@ test('orchestrator persists upstream 402 and logs only sanitized metadata', asyn
   assert.ok(!JSON.stringify(warnCalls).includes('valid text document'));
 });
 
+test('orchestrator persists only sanitized local provider diagnostics', async () => {
+  const error = new ProviderError(
+    'Local embedding model failed to initialize: cannot read /Users/alice/.cache/atlas/model.onnx HF_API_KEY=sk-live-secret',
+    { provider: 'local', statusCode: 503 }
+  );
+
+  const { persistedReason, warnCalls } = await captureProviderFailure(error);
+
+  assert.ok(persistedReason);
+  assert.match(persistedReason, /failed to initialize/);
+  assert.doesNotMatch(persistedReason, /\/Users\/alice/);
+  assert.doesNotMatch(persistedReason, /sk-live-secret/);
+
+  const metadata = providerFailureLog(warnCalls);
+  assert.equal(metadata.provider, 'local');
+  assert.equal(metadata.statusCode, 503);
+  assert.doesNotMatch(JSON.stringify(warnCalls), /\/Users\/alice/);
+  assert.doesNotMatch(JSON.stringify(warnCalls), /sk-live-secret/);
+});
+
 test('orchestrator logs genuine 502 as retryable without an upstream status', async () => {
   const error = new ProviderError('Hugging Face request failed with status 502.', {
     provider: 'Hugging Face',

@@ -1,3 +1,5 @@
+import { sanitizePublicErrorDetail } from './security/sanitize.js';
+
 export class ValidationError extends Error {
   constructor(message) {
     super(message);
@@ -26,6 +28,16 @@ export class ProviderError extends Error {
   }
 }
 
+export class EmbeddingSpaceError extends Error {
+  constructor(message, { spaceId = null, incompatibleSpaces = [] } = {}) {
+    super(message);
+    this.name = 'EmbeddingSpaceError';
+    this.statusCode = 503;
+    this.spaceId = spaceId;
+    this.incompatibleSpaces = incompatibleSpaces;
+  }
+}
+
 export class DatabaseError extends Error {
   constructor(message, { cause = null } = {}) {
     super(message);
@@ -51,9 +63,19 @@ export function classifyError(error) {
   }
 
   if (error instanceof ProviderError) {
+    const message = sanitizePublicErrorDetail(error.message);
+
     return {
       category: 'provider',
       statusCode: error.statusCode ?? 502,
+      message: message || 'Embedding provider request failed.'
+    };
+  }
+
+  if (error instanceof EmbeddingSpaceError) {
+    return {
+      category: 'embedding_space',
+      statusCode: 503,
       message: error.message
     };
   }

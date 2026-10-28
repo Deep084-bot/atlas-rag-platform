@@ -73,7 +73,12 @@ const documentOrchestrator = createDocumentOrchestrator({
 const embeddingProvider = createEmbeddingProvider();
 const embeddingSpace = resolveActiveEmbeddingSpace();
 const embeddingDimensions = resolveDimensionsForService({ provider: embeddingProvider, space: embeddingSpace });
-console.log('[atlas] embedding space active:', { spaceId: embeddingSpace.id, dimensions: embeddingDimensions, normalization: embeddingSpace.normalization });
+console.log('[atlas] embedding space active:', {
+  spaceId: embeddingSpace.id,
+  dimensions: embeddingDimensions,
+  normalization: embeddingSpace.normalization,
+  legacyUnknownPolicy: embeddingSpace.legacyUnknownPolicy
+});
 const embeddingBackfillRunner = isTableSpace(embeddingSpace)
   ? createEmbeddingBackfillRunner({
     pool,
@@ -98,7 +103,8 @@ documentOrchestrator.setEmbeddingService(embeddingService);
 const searchService = createSearchService({
   embeddingProvider,
   searchRepository,
-  dimensions: embeddingDimensions
+  dimensions: embeddingDimensions,
+  space: embeddingSpace
 });
 const retrievalService = createRetrievalService({
   searchService
@@ -214,11 +220,13 @@ app.get('/api/health/db', async (_request, response) => {
       database: 'connected'
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Database connection failed.';
+    const { sanitizeServerLogDetail } = await import('./security/sanitize.js');
+    const detail = error instanceof Error ? error.message : String(error ?? '');
+    console.error('DATABASE HEALTH CHECK ERROR:', sanitizeServerLogDetail(detail));
     return response.status(503).json({
       ok: false,
       database: 'disconnected',
-      message
+      message: 'Database connection failed.'
     });
   }
 });
@@ -227,7 +235,13 @@ app.get(['/api', '/api/status'], (_request, response) => {
   response.json({
     name: 'Atlas API',
     features: ['uploads', 'semantic-search', 'chat', 'citations'],
-    status: 'bootstrapped'
+    status: 'bootstrapped',
+    embedding: {
+      spaceId: embeddingSpace.id,
+      dimensions: embeddingDimensions,
+      normalization: embeddingSpace.normalization,
+      legacyUnknownPolicy: embeddingSpace.legacyUnknownPolicy
+    }
   });
 });
 

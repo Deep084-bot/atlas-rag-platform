@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { EmbeddingRepository } from '../../server/embeddings/embeddingRepository.js';
-import { DatabaseError } from '../../server/errors.js';
+import { DatabaseError, ValidationError } from '../../server/errors.js';
 
 function createRecorder(rows) {
   const calls = [];
@@ -38,6 +38,44 @@ test('countEmbeddedChunks uses the provided transaction client instead of the po
   assert.equal(embedded, 2);
   assert.equal(pool.calls.length, 0);
   assert.equal(client.calls.length, 1);
+});
+
+test('countEmbeddedChunks scopes counts to the active space and legacy policy', async () => {
+  const pool = createRecorder([{ embedded_chunks: 2 }]);
+  const repository = new EmbeddingRepository(pool);
+
+  const embedded = await repository.countEmbeddedChunks('doc-1', {
+    spaceId: 'local-space',
+    includeLegacyUnknown: false
+  });
+
+  assert.equal(embedded, 2);
+  assert.deepEqual(pool.calls[0].params, ['doc-1', 'local-space', false]);
+});
+
+test('updateChunkEmbedding records the embedding space with the vector', async () => {
+  const pool = createRecorder([{ id: 'chunk-1', embedding_space_id: 'local-space' }]);
+  const repository = new EmbeddingRepository(pool);
+
+  const updated = await repository.updateChunkEmbedding('chunk-1', [1, 0], {
+    spaceId: 'local-space'
+  });
+
+  assert.equal(updated.embedding_space_id, 'local-space');
+  assert.equal(pool.calls[0].params[0], 'chunk-1');
+  assert.equal(pool.calls[0].params[2], 'local-space');
+  assert.match(pool.calls[0].text, /embedding_space_id = \$3/);
+});
+
+test('updateChunkEmbedding refuses an untagged vector write', async () => {
+  const pool = createRecorder([]);
+  const repository = new EmbeddingRepository(pool);
+
+  await assert.rejects(
+    () => repository.updateChunkEmbedding('chunk-1', [1, 0]),
+    ValidationError
+  );
+  assert.equal(pool.calls.length, 0);
 });
 
 test('count helpers fall back to the pool and default to zero without rows', async () => {

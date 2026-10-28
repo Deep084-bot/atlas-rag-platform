@@ -97,6 +97,26 @@ test('embedMany rejects non-string items', async () => {
   await assert.rejects(() => provider.embedMany(['ok', 42]), TypeError);
 });
 
+test('passes cache, revision, and remote-model options to the loader', async () => {
+  let captured = null;
+  const provider = new LocalTransformersProvider({
+    cacheDir: '/tmp/atlas-bundled-cache',
+    revision: 'pinned-revision',
+    allowRemoteModels: false,
+    loadExtractor: async (options) => {
+      captured = options;
+
+      return async () => makeTensor([vector(384)]);
+    }
+  });
+
+  await provider.embed('hello');
+
+  assert.equal(captured.cacheDir, '/tmp/atlas-bundled-cache');
+  assert.equal(captured.revision, 'pinned-revision');
+  assert.equal(captured.allowRemoteModels, false);
+});
+
 test('passes pooling and normalize options to the extractor', async () => {
   let captured = null;
   const provider = new LocalTransformersProvider({
@@ -256,5 +276,161 @@ test('wraps inference failures in a ProviderError', async () => {
       error.name === 'ProviderError' &&
       error.statusCode === 502 &&
       /inference failed/.test(error.message)
+  );
+});
+
+test('strict cache verification blocks initialization before loading the model', async () => {
+  let loadCount = 0;
+  let verifyCount = 0;
+  const provider = new LocalTransformersProvider({
+    cacheDir: '/tmp/atlas-corrupt-cache',
+    strictCache: true,
+    verifyCache: async () => {
+      verifyCount += 1;
+      return {
+        ok: false,
+        failures: [{ path: 'onnx/model_quantized.onnx', reason: 'checksum-mismatch' }]
+      };
+    },
+    loadExtractor: makeLoader({ vectors: [vector(384)], onCall: () => { loadCount += 1; } })
+  });
+
+  await assert.rejects(
+    () => provider.embed('hi'),
+    (error) =>
+      error.name === 'ProviderError' &&
+      error.statusCode === 503 &&
+      /cache failed integrity verification/.test(error.message) &&
+      /checksum-mismatch/.test(error.message)
+  );
+
+  assert.equal(verifyCount, 1);
+  assert.equal(loadCount, 0);
+});
+
+test('strict cache verification allows a verified cache to initialize', async () => {
+  let loadCount = 0;
+  const provider = new LocalTransformersProvider({
+    cacheDir: '/tmp/atlas-valid-cache',
+    strictCache: true,
+    verifyCache: async () => ({ ok: true, failures: [] }),
+    loadExtractor: makeLoader({ vectors: [vector(384)], onCall: () => { loadCount += 1; } })
+  });
+
+  const embedding = await provider.embed('hi');
+
+  assert.equal(embedding.length, 384);
+  assert.equal(loadCount, 1);
+});
+
+test('strict mode fails clearly when no cache is available and remote is disabled', async () => {
+  let loadCount = 0;
+  const provider = new LocalTransformersProvider({
+    cacheDir: null,
+    allowRemoteModels: false,
+    strictCache: true,
+    loadExtractor: makeLoader({ vectors: [vector(384)], onCall: () => { loadCount += 1; } })
+  });
+
+  await assert.rejects(
+    () => provider.embed('hi'),
+    (error) =>
+      error.name === 'ProviderError' &&
+      error.statusCode === 503 &&
+      /no cache directory is configured/.test(error.message)
+  );
+  assert.equal(loadCount, 0);
+});
+
+test('strict mode rejects a same-size corrupted real manifest cache before loading', async (t) => {
+  const { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { EMBEDDING_MANIFEST } = await import('../../server/embeddings/embeddingManifest.js');
+
+  const cacheDir = mkdtempSync(path.join(tmpdir(), 'atlas-corrupt-cache-'));
+  t.after(() => rmSync(cacheDir, { recursive: true, force: true }));
+
+  for (const artifact of EMBEDDING_MANIFEST.artifacts) {
+    const target = path.join(
+      cacheDir,
+      'Xenova',
+      'bge-small-en-v1.5',
+      EMBEDDING_MANIFEST.model.revision,
+      artifact.path
+    );
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, '');
+    truncateSync(target, artifact.bytes);
+  }
+
+  let loadCount = 0;
+  const provider = new LocalTransformersProvider({
+    cacheDir,
+    strictCache: true,
+    loadExtractor: makeLoader({ vectors: [vector(384)], onCall: () => { loadCount += 1; } })
+  });
+
+  await assert.rejects(
+    () => provider.embed('hi'),
+    (error) =>
+      error.name === 'ProviderError' &&
+      /cache failed integrity verification/.test(error.message) &&
+      /checksum-mismatch/.test(error.message)
+  );
+  assert.equal(loadCount, 0);
+});
+
+test('initialization failures do not expose cache paths or credentials to callers', async () => {
+  const logCalls = [];
+  const provider = new LocalTransformersProvider({
+    cacheDir: '/Users/alice/.cache/atlas/model',
+    logger: { error: (...args) => logCalls.push(args) },
+    loadExtractor: async () => {
+      throw new Error(
+        'cannot read /Users/alice/.cache/atlas/model/tokenizer.json ' +
+        'HF_API_KEY=sk-live-secret postgresql://atlas:db-password@localhost:5432/atlas'
+      );
+    }
+  });
+
+  await assert.rejects(
+    () => provider.embed('hi'),
+    (error) => {
+      assert.equal(error.name, 'ProviderError');
+      assert.equal(error.statusCode, 503);
+      assert.match(error.message, /failed to initialize/);
+      assert.doesNotMatch(error.message, /\/Users\/alice/);
+      assert.doesNotMatch(error.message, /sk-live-secret/);
+      assert.doesNotMatch(error.message, /db-password/);
+      return true;
+    }
+  );
+
+  const serializedLogs = JSON.stringify(logCalls);
+  assert.match(serializedLogs, /local model initialization failed/);
+  assert.match(serializedLogs, /\/Users\/alice\/\.cache\/atlas/);
+  assert.doesNotMatch(serializedLogs, /sk-live-secret/);
+  assert.doesNotMatch(serializedLogs, /db-password/);
+});
+
+test('inference failures do not expose filesystem paths to callers', async () => {
+  const provider = new LocalTransformersProvider({
+    logger: { error: () => {} },
+    loadExtractor: async () =>
+      (async () => {
+        throw new Error('inference failed reading /Users/alice/.cache/atlas/model.onnx');
+      })
+  });
+
+  await assert.rejects(
+    () => provider.embed('hi'),
+    (error) => {
+      assert.equal(error.name, 'ProviderError');
+      assert.equal(error.statusCode, 502);
+      assert.match(error.message, /inference failed/);
+      assert.doesNotMatch(error.message, /\/Users\/alice/);
+      return true;
+    }
   );
 });

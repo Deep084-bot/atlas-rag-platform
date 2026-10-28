@@ -14,6 +14,7 @@ import { createSearchService } from '../../server/search/searchService.js';
 import { createDocumentOrchestrator } from '../../server/documents/documentOrchestrator.js';
 import { withTransaction } from '../../server/embeddings/embeddingBackfillRunner.js';
 import { createEmbeddingProvider } from '../../server/embeddings/createEmbeddingProvider.js';
+import { resolveEmbeddingSpaceForProvider } from '../../server/embeddings/embeddingSpaces.js';
 import { extractTextFromUpload } from '../../server/documents/extractText.js';
 
 const DB_URL = process.env.STAGE21_DB_URL || 'postgresql://localhost:5432/atlas_stage21_test';
@@ -86,14 +87,17 @@ try {
 
   const chunkService = createChunkService({ documentsRepository, chunkRepository });
   const provider = createEmbeddingProvider({ providerName: 'local' });
+  const space = resolveEmbeddingSpaceForProvider('local');
   const embeddingService = createEmbeddingService({
     documentsRepository,
     embeddingRepository,
     embeddingProvider: provider,
+    space,
     batchSize: 8
   });
 
   summary.provider = { name: provider.constructor.name, pooling: provider.pooling, quantized: provider.quantized, model: provider.model, dimensions: provider.dimensions };
+  summary.space = { id: space.id, dimensions: space.dimensions };
 
   const ocrService = {
     async ocrPdf() {
@@ -114,7 +118,7 @@ try {
   const ingestionMs = Date.now() - startedAt;
 
   const chunkRows = await pool.query(
-    'SELECT chunk_index, content, (embedding IS NOT NULL) AS has_embedding, vector_dims(embedding) AS dims FROM chunks WHERE document_id = $1 ORDER BY chunk_index ASC',
+    'SELECT chunk_index, content, (embedding IS NOT NULL) AS has_embedding, embedding_space_id, vector_dims(embedding) AS dims FROM chunks WHERE document_id = $1 ORDER BY chunk_index ASC',
     [documentId]
   );
 
@@ -128,11 +132,12 @@ try {
     chunkCount: chunkRows.rows.length,
     chunksWithEmbedding: chunkRows.rows.filter((r) => r.has_embedding).length,
     allDims384: chunkRows.rows.every((r) => r.dims === 384),
+    allTaggedWithActiveSpace: chunkRows.rows.every((r) => r.embedding_space_id === space.id),
     embeddingStatus: embeddedStatus
   };
   summary.chunks = chunkRows.rows.map((r) => ({ index: r.chunk_index, len: r.content.length, head: r.content.slice(0, 60).replace(/\s+/g, ' ') }));
 
-  const searchService = createSearchService({ embeddingProvider: provider, searchRepository, defaultTopK: 10, maxTopK: 25 });
+  const searchService = createSearchService({ embeddingProvider: provider, searchRepository, space, defaultTopK: 10, maxTopK: 25 });
   const searchStartedAt = Date.now();
   const { matches } = await searchService.search(QUERY, { userId: USER_ID, limit: 5 });
   summary.retrieval = {
@@ -166,7 +171,7 @@ try {
       return [0.1, 0.2, 0.3];
     }
   };
-  const badEmbeddingService = createEmbeddingService({ documentsRepository, embeddingRepository, embeddingProvider: badProvider, batchSize: 8 });
+  const badEmbeddingService = createEmbeddingService({ documentsRepository, embeddingRepository, embeddingProvider: badProvider, space, batchSize: 8 });
   const badOrchestrator = createDocumentOrchestrator({
     documentsRepository,
     chunkService,
@@ -196,6 +201,7 @@ try {
     && summary.ingestion.chunkCount > 0
     && summary.ingestion.chunksWithEmbedding === summary.ingestion.chunkCount
     && summary.ingestion.allDims384
+    && summary.ingestion.allTaggedWithActiveSpace
     && summary.retrieval.passed
     && summary.invalidEmbeddingCase.passed;
 

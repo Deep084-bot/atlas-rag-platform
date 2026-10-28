@@ -3,7 +3,8 @@ import {
   EMBEDDING_SPACE_ID
 } from './embeddingManifest.js';
 
-export const BGE_SPACE_ID = EMBEDDING_SPACE_ID;
+export const HOSTED_BGE_SPACE_ID = 'bge-small-en-v1.5-hosted-l2-v1';
+export const LOCAL_BGE_SPACE_ID = EMBEDDING_SPACE_ID;
 
 export const EMBEDDING_SPACE_CONFIG_VERSION = 1;
 
@@ -16,12 +17,32 @@ export function voyageSpaceId(dimensions = VOYAGE_DIMENSIONS_DEFAULT) {
 
 export const VOYAGE_SPACE_ID = voyageSpaceId(VOYAGE_DIMENSIONS_DEFAULT);
 
-export const BGE_SPACE = Object.freeze({
-  id: BGE_SPACE_ID,
+export const LEGACY_UNKNOWN_SPACE_LABEL = 'legacy-unknown';
+
+export const HOSTED_BGE_SPACE = Object.freeze({
+  id: HOSTED_BGE_SPACE_ID,
+  configVersion: EMBEDDING_SPACE_CONFIG_VERSION,
+  kind: 'bge',
+  provider: 'huggingface',
+  providers: Object.freeze(['huggingface']),
+  model: 'BAAI/bge-small-en-v1.5',
+  revision: null,
+  dimensions: 384,
+  normalization: 'l2',
+  pooling: null,
+  quantization: null,
+  queryInputType: null,
+  documentInputType: null,
+  storageColumn: 'embedding',
+  legacyUnknownPolicy: 'block'
+});
+
+export const LOCAL_BGE_SPACE = Object.freeze({
+  id: LOCAL_BGE_SPACE_ID,
   configVersion: EMBEDDING_SPACE_CONFIG_VERSION,
   kind: 'bge',
   provider: 'local',
-  providers: Object.freeze(['huggingface', 'local', 'local-transformers']),
+  providers: Object.freeze(['local', 'local-transformers']),
   model: EMBEDDING_MANIFEST.model.repository,
   revision: EMBEDDING_MANIFEST.model.revision,
   dimensions: EMBEDDING_MANIFEST.dimensions,
@@ -30,7 +51,8 @@ export const BGE_SPACE = Object.freeze({
   quantization: EMBEDDING_MANIFEST.quantization,
   queryInputType: null,
   documentInputType: null,
-  storageColumn: 'embedding'
+  storageColumn: 'embedding',
+  legacyUnknownPolicy: 'block'
 });
 
 export const VOYAGE_SPACE = Object.freeze({
@@ -48,6 +70,7 @@ export const VOYAGE_SPACE = Object.freeze({
   queryInputType: 'query',
   documentInputType: 'document',
   storageColumn: 'embedding',
+  legacyUnknownPolicy: 'block',
   pricing: Object.freeze({
     perMillionTokensUsd: 0.02,
     freeTokensPerAccount: 200_000_000,
@@ -56,16 +79,17 @@ export const VOYAGE_SPACE = Object.freeze({
 });
 
 export const EMBEDDING_SPACES = Object.freeze({
-  [BGE_SPACE_ID]: BGE_SPACE,
+  [HOSTED_BGE_SPACE_ID]: HOSTED_BGE_SPACE,
+  [LOCAL_BGE_SPACE_ID]: LOCAL_BGE_SPACE,
   [VOYAGE_SPACE_ID]: VOYAGE_SPACE
 });
 
-export const DEFAULT_EMBEDDING_SPACE_ID = BGE_SPACE_ID;
+export const DEFAULT_EMBEDDING_SPACE_ID = HOSTED_BGE_SPACE_ID;
 
 const PROVIDER_SPACE_IDS = Object.freeze({
-  huggingface: BGE_SPACE_ID,
-  local: BGE_SPACE_ID,
-  'local-transformers': BGE_SPACE_ID,
+  huggingface: HOSTED_BGE_SPACE_ID,
+  local: LOCAL_BGE_SPACE_ID,
+  'local-transformers': LOCAL_BGE_SPACE_ID,
   voyage: VOYAGE_SPACE_ID
 });
 
@@ -101,14 +125,54 @@ function buildVoyageSpace(env) {
   });
 }
 
-export function resolveEmbeddingSpaceForProvider(name, env = process.env) {
-  const spaceId = spaceIdForProvider(name) ?? DEFAULT_EMBEDDING_SPACE_ID;
+export const LEGACY_UNKNOWN_POLICY_BLOCK = 'block';
+export const LEGACY_UNKNOWN_POLICY_INCLUDE = 'include';
+export const LEGACY_UNKNOWN_POLICY_ENV = 'EMBEDDING_LEGACY_UNKNOWN_POLICY';
 
-  if (spaceId === VOYAGE_SPACE_ID) {
-    return buildVoyageSpace(env);
+export function resolveLegacyUnknownPolicy(env = process.env) {
+  const raw = env?.[LEGACY_UNKNOWN_POLICY_ENV];
+
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return LEGACY_UNKNOWN_POLICY_BLOCK;
   }
 
-  return EMBEDDING_SPACES[spaceId];
+  const normalized = String(raw).trim().toLowerCase();
+
+  if (normalized === LEGACY_UNKNOWN_POLICY_BLOCK || normalized === LEGACY_UNKNOWN_POLICY_INCLUDE) {
+    return normalized;
+  }
+
+  throw new Error(
+    `${LEGACY_UNKNOWN_POLICY_ENV} must be "${LEGACY_UNKNOWN_POLICY_BLOCK}" or `
+      + `"${LEGACY_UNKNOWN_POLICY_INCLUDE}", got "${raw}".`
+  );
+}
+
+function applyLegacyUnknownPolicy(space, env) {
+  const policy = resolveLegacyUnknownPolicy(env);
+
+  if (policy === LEGACY_UNKNOWN_POLICY_INCLUDE && space.id !== HOSTED_BGE_SPACE_ID) {
+    throw new Error(
+      `${LEGACY_UNKNOWN_POLICY_ENV}="${LEGACY_UNKNOWN_POLICY_INCLUDE}" is only supported for the hosted `
+        + `BGE space; active space "${space.id}" cannot include legacy unknown vectors.`
+    );
+  }
+
+  if (policy === space.legacyUnknownPolicy) {
+    return space;
+  }
+
+  return Object.freeze({
+    ...space,
+    legacyUnknownPolicy: policy
+  });
+}
+
+export function resolveEmbeddingSpaceForProvider(name, env = process.env) {
+  const spaceId = spaceIdForProvider(name) ?? DEFAULT_EMBEDDING_SPACE_ID;
+  const space = spaceId === VOYAGE_SPACE_ID ? buildVoyageSpace(env) : EMBEDDING_SPACES[spaceId];
+
+  return applyLegacyUnknownPolicy(space, env);
 }
 
 export function resolveActiveEmbeddingSpace(env = process.env) {

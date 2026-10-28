@@ -7,7 +7,7 @@ import { createEmbeddingProvider } from '../../server/embeddings/createEmbedding
 import { VoyageProvider } from '../../server/embeddings/VoyageProvider.js';
 import { assertRuntimeConfigMatchesManifest } from '../../server/embeddings/embeddingManifest.js';
 import {
-  BGE_SPACE_ID,
+  HOSTED_BGE_SPACE_ID,
   VOYAGE_MODEL_DEFAULT,
   getEmbeddingSpace,
   resolveEmbeddingSpaceForProvider,
@@ -226,7 +226,7 @@ async function queryBaseline(pool, { vector, topK, documentIds = null }) {
     chunkIndex: Number(r.chunk_index),
     similarity: Number(r.similarity),
     head: String(r.content).slice(0, 60).replace(/\s+/g, ' '),
-    spaceId: BGE_SPACE_ID
+    spaceId: HOSTED_BGE_SPACE_ID
   }));
 }
 

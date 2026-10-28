@@ -1,3 +1,9 @@
+-- Bootstrap schema for a NEW, empty database only.
+-- Do NOT apply this file to an existing database as a migration:
+-- CREATE TABLE IF NOT EXISTS does not add new columns to existing tables.
+-- For an existing database, apply database/migrations/*.sql in filename order
+-- before deploying application code that reads/writes embedding provenance.
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -38,6 +44,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   content text NOT NULL,
   character_count integer NOT NULL,
   embedding vector(384),
+  embedding_space_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (document_id, chunk_index)
 );
@@ -45,6 +52,10 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
 CREATE INDEX IF NOT EXISTS chunks_created_at_idx ON chunks (created_at DESC);
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx ON chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS chunks_embedding_space_idx ON chunks (embedding_space_id);
+
+COMMENT ON COLUMN chunks.embedding_space_id IS
+  'Embedding space that produced chunks.embedding. NULL means legacy/unknown provenance and must not be treated as a hosted or local vector without evidence.';
 
 CREATE TABLE IF NOT EXISTS chunk_embeddings (
   chunk_id uuid NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,

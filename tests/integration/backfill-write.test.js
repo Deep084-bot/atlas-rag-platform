@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { Client } from 'pg';
 
 import { main } from '../../scripts/dev/embedding-backfill-write.mjs';
-import { BGE_SPACE_ID, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
+import { HOSTED_BGE_SPACE_ID, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
 import { ProviderError } from '../../server/errors.js';
 import {
   INTEGRATION_DB_ENV,
@@ -35,7 +35,7 @@ import {
  */
 
 const SPACE_ID = VOYAGE_SPACE.id;
-const BGE_SPACE = BGE_SPACE_ID;
+const BGE_SPACE = HOSTED_BGE_SPACE_ID;
 
 let baseTarget = null;
 let configError = null;

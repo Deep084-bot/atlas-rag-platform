@@ -1,5 +1,7 @@
 import { EmbeddingProvider } from './EmbeddingProvider.js';
 import { ProviderError } from '../errors.js';
+import { verifyArtifacts } from './embeddingManifest.js';
+import { sanitizePublicErrorDetail, sanitizeServerLogDetail } from '../security/sanitize.js';
 
 const DEFAULT_MODEL = 'Xenova/bge-small-en-v1.5';
 const DEFAULT_DIMENSIONS = 384;
@@ -49,9 +51,12 @@ export class LocalTransformersProvider extends EmbeddingProvider {
     quantized = false,
     cacheDir,
     revision,
-    allowRemoteModels = true,
+    allowRemoteModels = false,
+    strictCache = false,
     progressCallback = null,
-    loadExtractor = defaultLoadExtractor
+    loadExtractor = defaultLoadExtractor,
+    verifyCache = verifyArtifacts,
+    logger = console
   } = {}) {
     super();
     this.model = model;
@@ -62,8 +67,11 @@ export class LocalTransformersProvider extends EmbeddingProvider {
     this.cacheDir = cacheDir;
     this.revision = revision;
     this.allowRemoteModels = allowRemoteModels;
+    this.strictCache = strictCache;
     this.progressCallback = progressCallback;
     this.loadExtractor = loadExtractor;
+    this.verifyCache = verifyCache;
+    this.logger = logger;
     this._extractorPromise = null;
   }
 
@@ -79,6 +87,28 @@ export class LocalTransformersProvider extends EmbeddingProvider {
   }
 
   async _createExtractor() {
+    if (this.strictCache && !this.cacheDir && !this.allowRemoteModels) {
+      throw new ProviderError(
+        'Local embedding cache integrity cannot be verified: no cache directory is configured and remote downloads are disabled.',
+        { provider: 'local', statusCode: 503 }
+      );
+    }
+
+    if (this.strictCache && this.cacheDir) {
+      const integrity = await this.verifyCache({ cacheDir: this.cacheDir });
+
+      if (!integrity.ok) {
+        const details = integrity.failures
+          .map((failure) => `${failure.path} (${failure.reason})`)
+          .join(', ');
+
+        throw new ProviderError(
+          `Local embedding cache failed integrity verification (${details}); refusing to initialize model.`,
+          { provider: 'local', statusCode: 503 }
+        );
+      }
+    }
+
     try {
       return await this.loadExtractor({
         model: this.model,
@@ -90,12 +120,26 @@ export class LocalTransformersProvider extends EmbeddingProvider {
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
+      const publicReason = sanitizePublicErrorDetail(reason);
 
-      throw new ProviderError(`Local embedding model failed to initialize: ${reason}`, {
-        provider: 'local',
-        statusCode: 503,
-        cause: error instanceof Error ? error : null
+      this.logger?.error?.('[embeddings] local model initialization failed', {
+        model: this.model,
+        revision: this.revision,
+        cacheConfigured: Boolean(this.cacheDir),
+        causeName: error instanceof Error ? error.name : null,
+        detail: sanitizeServerLogDetail(reason)
       });
+
+      throw new ProviderError(
+        publicReason
+          ? `Local embedding model failed to initialize: ${publicReason}`
+          : 'Local embedding model failed to initialize.',
+        {
+          provider: 'local',
+          statusCode: 503,
+          cause: error instanceof Error ? error : null
+        }
+      );
     }
   }
 
@@ -129,12 +173,25 @@ export class LocalTransformersProvider extends EmbeddingProvider {
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
+      const publicReason = sanitizePublicErrorDetail(reason);
 
-      throw new ProviderError(`Local embedding inference failed: ${reason}`, {
-        provider: 'local',
-        statusCode: 502,
-        cause: error instanceof Error ? error : null
+      this.logger?.error?.('[embeddings] local model inference failed', {
+        model: this.model,
+        revision: this.revision,
+        causeName: error instanceof Error ? error.name : null,
+        detail: sanitizeServerLogDetail(reason)
       });
+
+      throw new ProviderError(
+        publicReason
+          ? `Local embedding inference failed: ${publicReason}`
+          : 'Local embedding inference failed.',
+        {
+          provider: 'local',
+          statusCode: 502,
+          cause: error instanceof Error ? error : null
+        }
+      );
     }
 
     const vectors = tensorToVectors(output);

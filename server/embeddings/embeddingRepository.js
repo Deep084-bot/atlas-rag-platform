@@ -1,6 +1,6 @@
 import { toSql } from 'pgvector';
 
-import { DatabaseError } from '../errors.js';
+import { DatabaseError, ValidationError } from '../errors.js';
 
 export class EmbeddingRepository {
   constructor(pool) {
@@ -32,19 +32,26 @@ export class EmbeddingRepository {
     }));
   }
 
-  async updateChunkEmbedding(chunkId, embedding) {
-    if (this.pool === null) {
+  async updateChunkEmbedding(chunkId, embedding, { spaceId = null, client = null } = {}) {
+    const queryable = client ?? this.pool;
+
+    if (queryable === null) {
       throw new DatabaseError('DATABASE_URL is not configured.');
     }
 
-    const result = await this.pool.query(
+    if (!spaceId || typeof spaceId !== 'string') {
+      throw new ValidationError('A space id is required to persist an embedding.');
+    }
+
+    const result = await queryable.query(
       `
         UPDATE chunks
-        SET embedding = $2::vector
+        SET embedding = $2::vector,
+            embedding_space_id = $3
         WHERE id = $1
-        RETURNING id, document_id, chunk_index, content, character_count, embedding, created_at
+        RETURNING id, document_id, chunk_index, content, character_count, embedding, embedding_space_id, created_at
       `,
-      [chunkId, toSql(embedding)]
+      [chunkId, toSql(embedding), spaceId]
     );
 
     return result.rows[0] ?? null;
@@ -69,7 +76,11 @@ export class EmbeddingRepository {
     return Number(result.rows[0]?.total_chunks ?? 0);
   }
 
-  async countEmbeddedChunks(documentId, { client = null } = {}) {
+  async countEmbeddedChunks(documentId, {
+    client = null,
+    spaceId = null,
+    includeLegacyUnknown = false
+  } = {}) {
     const queryable = client ?? this.pool;
 
     if (queryable === null) {
@@ -82,8 +93,13 @@ export class EmbeddingRepository {
         FROM chunks
         WHERE document_id = $1
           AND embedding IS NOT NULL
+          AND (
+            $2::text IS NULL
+            OR embedding_space_id = $2
+            OR ($3::boolean AND embedding_space_id IS NULL)
+          )
       `,
-      [documentId]
+      [documentId, spaceId, includeLegacyUnknown]
     );
 
     return Number(result.rows[0]?.embedded_chunks ?? 0);

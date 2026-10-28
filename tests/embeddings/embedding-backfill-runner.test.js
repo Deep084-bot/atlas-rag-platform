@@ -6,7 +6,7 @@ import {
   classifyBackfillError,
   withTransaction
 } from '../../server/embeddings/embeddingBackfillRunner.js';
-import { BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
+import { HOSTED_BGE_SPACE, VOYAGE_SPACE } from '../../server/embeddings/embeddingSpaces.js';
 import { DatabaseError, ProviderError, ValidationError } from '../../server/errors.js';
 
 function vec(dimensions = 1024) {
@@ -175,7 +175,7 @@ function createHarness({
 test('construction rejects a non-table (legacy) space', () => {
   assert.throws(
     () => createEmbeddingBackfillRunner({
-      space: BGE_SPACE,
+      space: HOSTED_BGE_SPACE,
       documentsRepository: {},
       embeddingRepository: {},
       chunkEmbeddingRepository: {},

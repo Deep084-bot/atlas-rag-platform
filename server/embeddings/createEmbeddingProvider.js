@@ -4,7 +4,9 @@ import { VoyageProvider } from './VoyageProvider.js';
 import {
   EMBEDDING_MANIFEST,
   assertRuntimeConfigMatchesManifest,
-  parseBoolean
+  hasPinnedArtifacts,
+  parseBoolean,
+  resolveBundledCacheDir
 } from './embeddingManifest.js';
 
 const HUGGINGFACE_MODEL = 'BAAI/bge-small-en-v1.5';
@@ -27,15 +29,29 @@ export function createEmbeddingProvider({ providerName, env = process.env } = {}
         assertRuntimeConfigMatchesManifest(env);
       }
 
+      const explicitCacheDir =
+        env.EMBEDDING_CACHE_DIR || env.TRANSFORMERS_CACHE_DIR || env.MODEL_CACHE_DIR || undefined;
+      const bundledCacheDir = resolveBundledCacheDir({ env });
+
+      // Prefer an explicitly configured cache only when it already holds the
+      // pinned artifacts. This keeps a correctly provisioned persistent disk
+      // working, but falls back to the image-bundled cache when the configured
+      // path is absent/empty/unwritable (e.g. a stale /var/data setting).
+      const useBundledCache = !hasPinnedArtifacts(explicitCacheDir) && hasPinnedArtifacts(bundledCacheDir);
+      const cacheDir = useBundledCache ? bundledCacheDir : explicitCacheDir;
+
       return new LocalTransformersProvider({
         model: env.LOCAL_EMBEDDING_MODEL || env.EMBEDDING_LOCAL_MODEL || LOCAL_MODEL,
         dimensions: Number(env.EMBEDDING_LOCAL_DIMENSIONS) || EMBEDDING_MANIFEST.dimensions,
         pooling: env.EMBEDDING_LOCAL_POOLING || DEFAULT_POOLING,
         normalize: parseBoolean(env.EMBEDDING_LOCAL_NORMALIZE, EMBEDDING_MANIFEST.normalize),
         quantized: parseBoolean(env.EMBEDDING_LOCAL_QUANTIZED, EMBEDDING_MANIFEST.quantization === 'int8'),
-        cacheDir: env.EMBEDDING_CACHE_DIR || undefined,
-        revision: env.EMBEDDING_LOCAL_REVISION || undefined,
-        allowRemoteModels: parseBoolean(env.EMBEDDING_LOCAL_ALLOW_REMOTE, true)
+        cacheDir,
+        revision: env.EMBEDDING_LOCAL_REVISION || EMBEDDING_MANIFEST.model.revision,
+        allowRemoteModels: useBundledCache
+          ? false
+          : parseBoolean(env.EMBEDDING_LOCAL_ALLOW_REMOTE, false),
+        strictCache: parseBoolean(env.EMBEDDING_LOCAL_STRICT, false)
       });
     }
 

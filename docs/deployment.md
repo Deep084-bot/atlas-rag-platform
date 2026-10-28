@@ -16,19 +16,42 @@ dependency on hosted Hugging Face Inference credits; it is not the production
 default. The Voyage provider is opt-in and requires a migration before use (see
 below).
 
+### Legacy `NULL` provenance
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `EMBEDDING_LEGACY_UNKNOWN_POLICY` | `block` | `block` excludes `NULL` provenance from search and embedded counts. `include` is a temporary hosted-only compatibility mode and is rejected for local/Voyage. |
+
+Existing vectors written before provenance existed have
+`chunks.embedding_space_id IS NULL`. They are not assumed to be hosted or local.
+Use `include` only after confirming the legacy rows are hosted and only until
+they are backfilled with the hosted space ID; then return to `block`. The active
+policy is included in the startup log, `/api/status`, and embedding-status
+responses.
+
+### Embedding error disclosure
+
+Local initialization/inference errors and persisted document failure reasons are
+sanitized before they leave the process. Filesystem paths, database URLs, bearer
+tokens, and API-key/token/password assignments are redacted from API responses
+and stored failure reasons. Server-side diagnostics retain the underlying error
+detail (with credentials redacted) so operators can still troubleshoot model
+cache problems.
+
 ### Local provider configuration
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `LOCAL_EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | ONNX export of `BAAI/bge-small-en-v1.5` |
-| `EMBEDDING_LOCAL_REVISION` | (unset → `main`) | Pin an immutable HF commit (e.g. the manifest revision) |
+| `EMBEDDING_LOCAL_REVISION` | manifest revision (`ea104dac…`) | Pin an immutable HF commit; defaults to the manifest revision |
 | `EMBEDDING_LOCAL_POOLING` | `mean` | `mean` (manifest) or `cls` (official BGE) |
 | `EMBEDDING_LOCAL_QUANTIZED` | `true` | `true` loads int8 weights (~34 MB) instead of fp32 (~133 MB) |
 | `EMBEDDING_LOCAL_NORMALIZE` | `true` | L2 normalization |
 | `EMBEDDING_LOCAL_DIMENSIONS` | `384` | Must match `chunks.embedding` |
-| `EMBEDDING_LOCAL_ALLOW_REMOTE` | `true` | Set `false` to require pre-baked local artifacts (no download) |
-| `EMBEDDING_LOCAL_STRICT` | `false` | Fail fast if env config disagrees with the embedding manifest |
-| `EMBEDDING_CACHE_DIR` | `node_modules/@xenova/transformers/.cache` | Set to a persistent/baked path |
+| `EMBEDDING_LOCAL_ALLOW_REMOTE` | `false` | Set `true` only for an explicit first-run/dev download |
+| `EMBEDDING_LOCAL_STRICT` | `false` | Fail on manifest disagreement and verify cache size + SHA-256 before model initialization; production/Docker sets `true` |
+| `EMBEDDING_CACHE_DIR` | unset | Preferred cache path; used only if it already contains the pinned artifacts |
+| `EMBEDDING_BUNDLED_CACHE_DIR` | `<cwd>/model-cache` | Image/build-bundled pinned artifacts (also `ATLAS_MODEL_CACHE_DIR`) |
 
 Defaults are drawn from the embedding manifest
 (`server/embeddings/embeddingManifest.js`), which pins the model repository,
@@ -41,6 +64,36 @@ The model is loaded lazily on the first embedding request, memoized in-process
 Hugging Face. Initialization and inference failures surface as `ProviderError`
 (503 and 502 respectively) so operational failures are visible instead of being
 masked.
+
+#### Bundled cache (no persistent disk)
+
+In local mode the provider prefers `EMBEDDING_CACHE_DIR` only when that
+directory already contains every pinned artifact at the exact manifest size.
+Otherwise it falls back to the bundled cache (`<cwd>/model-cache` by default)
+and forces `allowRemoteModels=false`. When strict mode is enabled, the provider
+verifies every artifact's size and SHA-256 before model initialization, so a
+selected truncated or same-size corrupted file fails clearly instead of loading.
+An incomplete explicit path falls back only to a fully sized bundled cache; a
+same-size explicit file is selected and then rejected by strict verification.
+This makes a stale/unwritable path such as `/var/data` harmless without changing
+production environment variables, and prevents runtime downloads or cache
+writes.
+
+Build the bundle reproducibly (pinned revision + SHA-256 verification):
+
+```sh
+npm run build:model   # downloads into ./model-cache, fails on checksum mismatch
+```
+
+The backend Dockerfile already does this at image build time into
+`/app/model-cache` after dependency install. Its `npm ci` uses
+`--ignore-scripts` so install-time hooks cannot race the artifact step. For a
+Render *native Node* service (not Docker), the guarded `postinstall` hook uses
+`EMBEDDING_BUNDLED_CACHE_DIR` (default `<cwd>/model-cache`) and runs the same
+download automatically when `EMBEDDING_PROVIDER=local` (or
+`ATLAS_BUNDLE_EMBEDDING_MODEL=1`); alternatively set the build command to
+`npm ci && npm run build:model`. `model-cache/` is git-ignored; do not commit
+weights.
 
 ### Voyage provider configuration (opt-in)
 
@@ -81,6 +134,29 @@ Gated smoke test (does nothing without a key, never prints the key):
 VOYAGE_API_KEY=... node scripts/dev/voyage-embedding-smoke.mjs
 ```
 
+## Schema migration order and production re-embedding
+
+For an existing database, apply every file in `database/migrations/` in filename
+order **before** deploying code that reads or writes
+`chunks.embedding_space_id`. `database/schema.sql` is bootstrap-only for a new
+empty database; it cannot add columns to an existing table because it uses
+`CREATE TABLE IF NOT EXISTS`.
+
+The provenance migration is additive and split:
+`20261027_add_chunk_embedding_space.sql` adds the column only (transaction-safe);
+`20261028_add_chunk_embedding_space_index_concurrently.sql` builds
+`chunks_embedding_space_idx` with `CREATE INDEX CONCURRENTLY` outside a
+transaction. On a large production table, add the column first, build the
+concurrent index outside a transaction, and only then deploy the application.
+If a concurrent build fails it may leave an INVALID index that must be dropped
+before retrying. No zero-downtime production run has been proven.
+
+There is no approved bulk production re-embedding tool in this repository. The
+per-document API is not an operator workflow, and the staging migration script
+writes only to `embedding_shadow_chunks` and refuses production-like targets.
+Use [`docs/production-reembedding-design.md`](./production-reembedding-design.md)
+as the required design/checklist before implementing one.
+
 ## Vector compatibility (critical)
 
 `chunks.embedding` is `vector(384)`. Dimension parity is necessary but not
@@ -111,29 +187,34 @@ sufficient — the retrieval space must also match.
 database to local embeddings, either re-embed the documents with the local
 provider or verify equivalence with a probe: embed the same sample texts through
 both paths and compare cosine similarity (≈1.0 means compatible). Atlas does not
-re-embed or modify stored vectors automatically.
+re-embed or modify stored vectors automatically. See
+[`docs/local-embedding-cutover.md`](./local-embedding-cutover.md) for the
+provenance-guarded cutover and rollback procedure.
 
 ## Hosting constraints
 
 - **Alpine / musl.** `onnxruntime-node` (used by `@xenova/transformers`) is built
-  against glibc and does not load on Alpine (`node:20-alpine`, the current
-  Dockerfile base); the failure is `Error loading shared library
+  against glibc and does not load on Alpine. The backend image uses
+  `node:20-bookworm-slim` (glibc, Node 20); the old `node:20-alpine` base was
+  replaced because it failed with `Error loading shared library
   ld-linux-x86-64.so.2`. There is no runtime WASM fallback in this library
-  version. A glibc base image such as `node:20-slim` is required for the local
-  path. Hugging Face deployments are unaffected because the library is imported
-  lazily only when the local provider is selected.
+  version. Hugging Face deployments are unaffected because the library is
+  imported lazily only when the local provider is selected.
 - **Artifact size.** `onnxruntime-node` is ~90–220 MB unpacked; fp32 BGE-small is
   ~133 MB. This exceeds serverless function size limits (e.g. Vercel's 250 MB),
   so the local provider is not viable on Vercel.
-- **Memory.** fp32 BGE-small plus ONNX Runtime plus the Express process is roughly
-  300–500 MB RSS; the int8 model is lighter (~200–300 MB). A 512 MB instance is
-  marginal, especially under concurrency.
-- **Cache persistence.** The default cache lives inside `node_modules` and is
-  wiped on rebuild. Without a persistent `EMBEDDING_CACHE_DIR`, every cold start
-  re-downloads the model, slowing startup and risking request timeouts.
+- **Memory.** The int8 model plus ONNX Runtime plus the Express process measured
+  ~272 MB RSS after load on macOS/arm64 (max ~285 MB); a 512 MB Render Free
+  instance is viable only with headroom validation. Do not extrapolate an
+  AMD64/Render memory result from arm64 documentation.
+- **Cache persistence.** The Docker image bakes the cache at `/app/model-cache`;
+  no persistent disk is required. A configured path that lacks the pinned files
+  is ignored in favor of the bundle, and runtime downloads are disabled by
+  default.
 - **Health checks.** `/api/health` does not touch the model, and initialization is
   lazy, so model load does not fail startup health checks. The first embedding
-  request after a cold start pays the download/init cost.
+  request after a cold start pays the init cost from the local bundle, not a
+  network download.
 
 ## Pinned local INT8 image
 
@@ -147,9 +228,10 @@ The backend Dockerfile builds on `node:20-bookworm-slim` (glibc, Node 20). It:
 - sets `EMBEDDING_LOCAL_ALLOW_REMOTE=false` and `EMBEDDING_LOCAL_STRICT=true` so a
   missing/incorrect artifact fails loudly instead of downloading.
 
-The default provider remains `huggingface`. Measured inside the image
-(linux/arm64, `--memory=512m`): INT8 warm init ≈ 0.2–0.3 s, RSS after load
-≈ 245 MB, container memory ≈ 190 MB; 16 parallel embed calls completed without
-OOM; cold start with `--network none` succeeded (artifacts baked). Under a
-Render-free-like `--cpus=0.1` limit, cold init was ≈ 14 s and a single 3-text
-batch ≈ 4.4 s — functional but slow for interactive use.
+The default provider remains `huggingface`. Earlier measurements inside
+linux/arm64 (`--memory=512m`) showed INT8 warm init ≈ 0.2–0.3 s, RSS after load
+≈ 245 MB, container memory ≈ 190 MB, 16 parallel embed calls without OOM, and a
+cold start with `--network none` (artifacts baked). Under `--cpus=0.1`, cold
+init was ≈ 14 s and a single 3-text batch ≈ 4.4 s. These are **arm64**
+measurements and do not establish Render's AMD64 Free-tier behaviour; run the
+AMD64 checks in `docs/local-embedding-cutover.md` before claiming readiness.
