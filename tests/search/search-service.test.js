@@ -231,3 +231,170 @@ test('search fails closed when a space-aware repository lacks compatibility chec
     /requires compatibility checks/
   );
 });
+
+
+test('search proceeds when global legacy vectors exist but user has compatible active-space vectors', async () => {
+  let providerCalled = false;
+  let searchCalled = false;
+  let preflightArgs = null;
+  let compatibleArgs = null;
+  const fakeProvider = {
+    embed: async () => {
+      providerCalled = true;
+      return Array(384).fill(0.1);
+    }
+  };
+  const fakeRepo = {
+    summarizeIncompatibleEmbeddings: async () => ({
+      total: 1351,
+      spaces: [{ spaceId: 'legacy-unknown', chunkCount: 1351 }]
+    }),
+    countCompatibleEmbeddingsForUser: async (args) => {
+      compatibleArgs = args;
+      return 1;
+    },
+    searchChunksByEmbeddingForUser: async () => {
+      searchCalled = true;
+      return [
+        {
+          chunkId: 'chunk-1',
+          documentId: 'doc-1',
+          fileName: 'atlas-phase11-test.txt',
+          chunkIndex: 0,
+          similarity: 0.92,
+          chunkText: 'test content'
+        }
+      ];
+    }
+  };
+  const service = createSearchService({
+    embeddingProvider: fakeProvider,
+    searchRepository: fakeRepo,
+    space: LOCAL_BGE_SPACE
+  });
+
+  const result = await service.search('test', { userId: 'user-1' });
+
+  assert.equal(providerCalled, true);
+  assert.equal(searchCalled, true);
+  assert.deepEqual(preflightArgs, null); // not tracked separately, but we know it was called
+  assert.equal(compatibleArgs.userId, 'user-1');
+  assert.equal(compatibleArgs.spaceId, LOCAL_BGE_SPACE.id);
+  assert.equal(compatibleArgs.includeLegacyUnknown, false);
+  assert.equal(compatibleArgs.conversationId, undefined);
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0].chunkId, 'chunk-1');
+});
+
+test('another user compatible vectors do not satisfy preflight for different user', async () => {
+  let compatibleArgs = null;
+  const fakeProvider = { embed: async () => Array(384).fill(0.1) };
+  const fakeRepo = {
+    summarizeIncompatibleEmbeddings: async () => ({
+      total: 5,
+      spaces: [{ spaceId: 'legacy-unknown', chunkCount: 5 }]
+    }),
+    countCompatibleEmbeddingsForUser: async (args) => {
+      compatibleArgs = args;
+      return 0; // user B has no compatible vectors
+    },
+    searchChunksByEmbeddingForUser: async () => {
+      throw new Error('should not be called');
+    }
+  };
+  const service = createSearchService({
+    embeddingProvider: fakeProvider,
+    searchRepository: fakeRepo,
+    space: LOCAL_BGE_SPACE
+  });
+
+  await assert.rejects(
+    async () => service.search('hello', { userId: 'user-b' }),
+    (error) => error.name === 'EmbeddingSpaceError'
+  );
+  assert.equal(compatibleArgs.userId, 'user-b');
+});
+
+test('conversation scoped search does not pass preflight with vectors outside conversation', async () => {
+  let compatibleArgs = null;
+  const fakeProvider = { embed: async () => Array(384).fill(0.1) };
+  const fakeRepo = {
+    summarizeIncompatibleEmbeddings: async () => ({
+      total: 3,
+      spaces: [{ spaceId: 'legacy-unknown', chunkCount: 3 }]
+    }),
+    countCompatibleEmbeddingsForUser: async (args) => {
+      compatibleArgs = args;
+      return 0; // no compatible vectors in this conversation
+    },
+    searchChunksByEmbeddingForUser: async () => {
+      throw new Error('should not be called');
+    }
+  };
+  const service = createSearchService({
+    embeddingProvider: fakeProvider,
+    searchRepository: fakeRepo,
+    space: LOCAL_BGE_SPACE
+  });
+
+  await assert.rejects(
+    async () => service.search('hello', { userId: 'user-1', conversationId: 'conv-1' }),
+    (error) => error.name === 'EmbeddingSpaceError'
+  );
+  assert.equal(compatibleArgs.conversationId, 'conv-1');
+});
+
+test('user with zero compatible vectors receives compatibility error', async () => {
+  const fakeProvider = { embed: async () => Array(384).fill(0.1) };
+  const fakeRepo = {
+    summarizeIncompatibleEmbeddings: async () => ({
+      total: 10,
+      spaces: [{ spaceId: HOSTED_BGE_SPACE.id, chunkCount: 10 }]
+    }),
+    countCompatibleEmbeddingsForUser: async () => 0,
+    searchChunksByEmbeddingForUser: async () => {
+      throw new Error('should not be called');
+    }
+  };
+  const service = createSearchService({
+    embeddingProvider: fakeProvider,
+    searchRepository: fakeRepo,
+    space: LOCAL_BGE_SPACE
+  });
+
+  await assert.rejects(
+    async () => service.search('hello', { userId: 'user-1' }),
+    (error) =>
+      error.name === 'EmbeddingSpaceError' &&
+      error.statusCode === 503 &&
+      /Search is blocked/.test(error.message)
+  );
+});
+
+test('preflight count error is rethrown not converted to compatibility error', async () => {
+  const { DatabaseError } = await import('../../server/errors.js');
+  const dbError = new DatabaseError('connection failed');
+  const fakeProvider = { embed: async () => Array(384).fill(0.1) };
+  const fakeRepo = {
+    summarizeIncompatibleEmbeddings: async () => ({
+      total: 5,
+      spaces: [{ spaceId: 'legacy-unknown', chunkCount: 5 }]
+    }),
+    countCompatibleEmbeddingsForUser: async () => {
+      throw dbError;
+    },
+    searchChunksByEmbeddingForUser: async () => {
+      throw new Error('should not be called');
+    }
+  };
+  const service = createSearchService({
+    embeddingProvider: fakeProvider,
+    searchRepository: fakeRepo,
+    space: LOCAL_BGE_SPACE
+  });
+
+  await assert.rejects(
+    async () => service.search('hello', { userId: 'user-1' }),
+    (error) => error === dbError && error.name === 'DatabaseError'
+  );
+});

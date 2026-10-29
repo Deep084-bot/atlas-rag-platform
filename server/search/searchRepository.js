@@ -130,4 +130,44 @@ export class SearchRepository {
       spaces
     };
   }
+
+  async countCompatibleEmbeddingsForUser({
+    userId,
+    spaceId = null,
+    includeLegacyUnknown = false,
+    conversationId = null
+  } = {}) {
+    if (this.pool === null) {
+      throw new DatabaseError('DATABASE_URL is not configured.');
+    }
+
+    if (typeof userId !== 'string' || userId.length === 0) {
+      throw new DatabaseError('A user id is required to count compatible embeddings.');
+    }
+
+    if (typeof spaceId !== 'string' || spaceId.length === 0) {
+      throw new DatabaseError('An embedding space id is required to count compatible embeddings.');
+    }
+
+    const result = await this.pool.query(
+      `
+        SELECT COUNT(*)::int AS compatible_count
+        FROM chunks
+        INNER JOIN documents ON documents.id = chunks.document_id
+        WHERE chunks.embedding IS NOT NULL
+          AND documents.user_id = $1
+          AND ($4::uuid IS NULL OR chunks.document_id IN (
+            SELECT document_id FROM conversation_documents
+            WHERE conversation_id = $4::uuid
+          ))
+          AND (
+            chunks.embedding_space_id = $2
+            OR ($3::boolean AND chunks.embedding_space_id IS NULL)
+          )
+      `,
+      [userId, spaceId, includeLegacyUnknown, conversationId ?? null]
+    );
+
+    return Number(result.rows[0]?.compatible_count ?? 0);
+  }
 }

@@ -58,15 +58,34 @@ export function createSearchService({
         });
 
         if (incompatible.total > 0) {
-          throw new EmbeddingSpaceError(
-            `Search is blocked: ${incompatible.total} stored embedding(s) do not belong to the active `
-              + `space "${space.id}" (${describeIncompatibleSpaces(incompatible.spaces)}). `
-              + 'Re-embed those documents or switch back to their embedding space before searching.',
-            {
-              spaceId: space.id,
-              incompatibleSpaces: incompatible.spaces
+          let compatibleCount = 0;
+
+          if (typeof searchRepository.countCompatibleEmbeddingsForUser === 'function') {
+            try {
+              compatibleCount = await searchRepository.countCompatibleEmbeddingsForUser({
+                userId: normalizedUserId,
+                spaceId: space.id,
+                includeLegacyUnknown,
+                conversationId
+              });
+            } catch (error) {
+              // Do not mask real database/query failures as a provenance incompatibility.
+              // If we cannot determine compatibility safely, re-throw the original error.
+              throw error;
             }
-          );
+          }
+
+          if (compatibleCount === 0) {
+            throw new EmbeddingSpaceError(
+              `Search is blocked: ${incompatible.total} stored embedding(s) do not belong to the active `
+                + `space "${space.id}" (${describeIncompatibleSpaces(incompatible.spaces)}). `
+                + 'Re-embed those documents or switch back to their embedding space before searching.',
+              {
+                spaceId: space.id,
+                incompatibleSpaces: incompatible.spaces
+              }
+            );
+          }
         }
       }
 
