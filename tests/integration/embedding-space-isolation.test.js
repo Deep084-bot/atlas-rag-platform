@@ -196,15 +196,55 @@ test('retrieval filters out vectors from other spaces and legacy rows for local 
   assert.deepEqual(local.map((row) => row.chunkText), ['local']);
 });
 
-test('search blocks a local query while hosted vectors remain', async (t) => {
+test('local search proceeds for user with compatible local embeddings despite hosted and legacy-unknown vectors', async (t) => {
   if (skipReason) {
     return t.skip(skipReason);
   }
 
+  let providerCalled = false;
   const service = createSearchService({
     embeddingProvider: {
       embed: async () => {
-        throw new Error('provider should not be called after a space mismatch');
+        providerCalled = true;
+        return vector(384);
+      }
+    },
+    searchRepository: new SearchRepository(pool),
+    space: LOCAL_BGE_SPACE
+  });
+
+  const result = await service.search('hello', { userId: 'user-1' });
+
+  assert.equal(providerCalled, true);
+  assert.ok(Array.isArray(result.matches));
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0].chunkText, 'local');
+  assert.equal(result.matches[0].chunkId, 'bbbbbbbb-3333-4333-8333-333333333333');
+  const texts = result.matches.map((row) => row.chunkText);
+  assert.deepEqual(texts.includes('hosted'), false);
+  assert.deepEqual(texts.includes('legacy'), false);
+});
+
+test('local search throws EmbeddingSpaceError when user has no compatible embeddings and only incompatible or legacy-unknown exist', async (t) => {
+  if (skipReason) {
+    return t.skip(skipReason);
+  }
+
+  const documentId = 'cccccccc-1111-4111-8111-111111111111';
+  await insertDocument(pool, { id: documentId, fileName: 'other.txt' });
+  await pool.query('UPDATE documents SET user_id = $2 WHERE id = $1', [documentId, 'user-2']);
+
+  const hostedChunk = 'dddddddd-1111-4111-8111-111111111111';
+  const legacyChunk = 'dddddddd-2222-4222-8222-222222222222';
+  await insertChunk(pool, { id: hostedChunk, documentId, chunkIndex: 0, content: 'hosted-other' });
+  await insertChunk(pool, { id: legacyChunk, documentId, chunkIndex: 1, content: 'legacy-other' });
+  await tagEmbedding(hostedChunk, HOSTED_BGE_SPACE.id);
+  await tagEmbedding(legacyChunk, null);
+
+  const service = createSearchService({
+    embeddingProvider: {
+      embed: async () => {
+        throw new Error('provider should not be called');
       }
     },
     searchRepository: new SearchRepository(pool),
@@ -212,7 +252,7 @@ test('search blocks a local query while hosted vectors remain', async (t) => {
   });
 
   await assert.rejects(
-    () => service.search('hello', { userId: 'user-1' }),
+    () => service.search('hello', { userId: 'user-2' }),
     (error) => error.name === 'EmbeddingSpaceError' && /Search is blocked/.test(error.message)
   );
 });
